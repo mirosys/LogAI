@@ -29,10 +29,11 @@ public class ExperimentalScreen extends SetupScreen {
 				Texts.dim("knows the game is running and shows the instance as stopped."),
 				Texts.blank(),
 				Texts.dim("If your launcher can be asked to start an instance by link, put that"),
-				Texts.dim("link here and LogAI will use it instead. The launcher does the work,"),
-				Texts.dim("so its own display stays correct."),
+				Texts.dim("link here and LogAI will try it first. If nothing starts within twenty"),
+				Texts.dim("seconds, LogAI restarts the game itself, so you are never left waiting."),
 				Texts.blank(),
-				Texts.accent("Modrinth App:  modrinth://launch/instance/<your instance id>"));
+				Texts.accent("Modrinth App:  modrinth://launch/instance/<instance id>"),
+				Texts.warn("Not yet confirmed to work - the app accepts the link but may ignore it."));
 	}
 
 	@Override
@@ -68,7 +69,21 @@ public class ExperimentalScreen extends SetupScreen {
 
 	@Override
 	protected List<Component> footer() {
-		return List.of(Texts.dim("Empty means LogAI restarts the game on its own."));
+		String value = this.config.launchLink == null ? "" : this.config.launchLink.strip();
+
+		if (value.isEmpty()) {
+			return List.of(Texts.dim("Empty means LogAI restarts the game on its own."));
+		}
+
+		// Nur eine Kennung ohne Schema ist der häufigste Fehler: das Betriebssystem
+		// hielte sie für einen Dateinamen und der Neustart fiele stillschweigend aus.
+		if (!value.matches("(?i)[a-z][a-z0-9+.-]*://.+")) {
+			return List.of(
+					Texts.warn("That is not a link - it needs a scheme, like  name://something"),
+					Texts.dim("LogAI will ignore it and restart the game on its own."));
+		}
+
+		return List.of(Texts.dim("Looks like a link. LogAI will hand the restart to your launcher."));
 	}
 
 	@Override

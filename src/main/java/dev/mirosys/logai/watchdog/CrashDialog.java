@@ -233,20 +233,29 @@ public final class CrashDialog {
 	 * im Browser, ein { launcher://}-Link im zugehörigen Programm.
 	 */
 	public static void openUri(String url) {
-		try {
-			if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
-				Desktop.getDesktop().browse(URI.create(url));
-				return;
+		// Desktop.browse ist ausdrücklich für Webseiten da und gibt alles andere an den
+		// Browser weiter. Ein launcher://-Link landet dann dort statt beim Launcher, und
+		// der Browser fragt bestenfalls nach. Deshalb nur für http und https.
+		if (isWebPage(url)) {
+			try {
+				if (Desktop.isDesktopSupported()
+						&& Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+					Desktop.getDesktop().browse(URI.create(url));
+					return;
+				}
+			} catch (Exception ignored) {
+				// Fällt unten auf den Weg über die Shell zurück.
 			}
-		} catch (Exception ignored) {
-			// Fällt unten auf den Kommandozeilen-Weg zurück.
 		}
 
 		String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
 
 		try {
 			if (os.contains("win")) {
-				new ProcessBuilder("rundll32", "url.dll,FileProtocolHandler", url).start();
+				// start reicht die Adresse an das Programm weiter, das für dieses Schema
+				// eingetragen ist. Der leere Titel gehört dazu, sonst nimmt start die
+				// Adresse als Fenstertitel.
+				new ProcessBuilder("cmd.exe", "/c", "start", "", url).start();
 			} else if (os.contains("mac")) {
 				new ProcessBuilder("open", url).start();
 			} else {
@@ -255,6 +264,11 @@ public final class CrashDialog {
 		} catch (Exception ignored) {
 			// Mehr können wir an dieser Stelle nicht tun.
 		}
+	}
+
+	private static boolean isWebPage(String url) {
+		String lower = url.toLowerCase(Locale.ROOT);
+		return lower.startsWith("http://") || lower.startsWith("https://");
 	}
 
 	private static void applySystemLookAndFeel() {

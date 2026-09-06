@@ -27,6 +27,9 @@ public final class CrashWatcher {
 	/** Kuerzer gelaufen heisst: der Neustart wuerde nur eine Absturzschleife eroeffnen. */
 	private static final long MIN_UPTIME_FOR_RESTART_MILLIS = 60_000L;
 
+	/** So lange bekommt ein Launcher Zeit, auf den Startlink zu reagieren. */
+	private static final long LAUNCHER_GRACE_MILLIS = 20_000L;
+
 	public static void main(String[] args) {
 		if (args.length < 1) {
 			System.err.println("LogAI watcher: expected the session file as first argument");
@@ -178,20 +181,37 @@ public final class CrashWatcher {
 		}
 
 		// Mit hinterlegtem Startlink braucht es die aufgezeichnete Startzeile nicht.
-		if (session.launchLink != null && !session.launchLink.isBlank()) {
+		if (usableLaunchLink(session)) {
 			return true;
 		}
 
 		return Files.isReadable(session.restartCommandFile);
 	}
 
+	/**
+	 * Ein Startlink taugt nur, wenn er auch einer ist. Steht dort etwa nur eine
+	 * Instanz-Kennung, wuerde das Betriebssystem sie fuer einen Dateinamen halten - und
+	 * der Neustart faellt still aus. Dann lieber der eigene Weg, der immer funktioniert.
+	 */
+	private static boolean usableLaunchLink(WatchSession session) {
+		return session.launchLink != null && session.launchLink.matches("(?i)[a-z][a-z0-9+.-]*://.+");
+	}
+
 	private static void restartGame(WatchSession session) {
 		// Wenn der Nutzer einen Startlink hinterlegt hat, soll der Launcher das Spiel
 		// starten - dann bleibt auch dessen eigene Anzeige richtig.
-		if (session.launchLink != null && !session.launchLink.isBlank()) {
+		if (usableLaunchLink(session)) {
 			System.out.println("LogAI: asking the launcher to restart Minecraft");
 			CrashDialog.openUri(session.launchLink);
-			return;
+
+			// Manche Launcher nehmen den Link entgegen und tun dann nichts, ohne das
+			// irgendwo zu melden. Wer auf "Neustart" geklickt hat, soll deswegen nicht
+			// vor einem Spiel sitzen, das nie kommt.
+			if (gameAppeared(session)) {
+				return;
+			}
+
+			System.out.println("LogAI: the launcher did not start the game, doing it directly");
 		}
 
 		try {
@@ -201,6 +221,47 @@ public final class CrashWatcher {
 		} catch (IOException e) {
 			System.err.println("LogAI watcher: could not restart Minecraft: " + e);
 		}
+	}
+
+	/**
+	 * Wartet darauf, dass wieder ein Spiel läuft.
+	 *
+	 * <p>Erkannt wird es an der Java-Programmdatei aus der aufgezeichneten Startzeile -
+	 * die Argumente eines fremden Prozesses gibt das Betriebssystem nicht heraus, die
+	 * Programmdatei schon.
+	 */
+	private static boolean gameAppeared(WatchSession session) {
+		String javaBinary;
+
+		try {
+			javaBinary = RestartCommand.read(session.restartCommandFile).get(0);
+		} catch (IOException | IndexOutOfBoundsException e) {
+			// Ohne Vergleichswert lieber glauben, dass es geklappt hat, als das Spiel
+			// womöglich zweimal zu starten.
+			return true;
+		}
+
+		long deadline = System.currentTimeMillis() + LAUNCHER_GRACE_MILLIS;
+
+		while (System.currentTimeMillis() < deadline) {
+			boolean running = ProcessHandle.allProcesses()
+					.anyMatch(process -> process.info().command()
+							.map(command -> command.equalsIgnoreCase(javaBinary))
+							.orElse(false));
+
+			if (running) {
+				return true;
+			}
+
+			try {
+				Thread.sleep(1000);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
