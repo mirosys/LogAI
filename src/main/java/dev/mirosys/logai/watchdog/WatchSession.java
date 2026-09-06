@@ -29,6 +29,8 @@ public final class WatchSession {
 	public boolean autoOpen;
 	/** Nach dem Absturz ungefragt neu starten. */
 	public boolean autoRestart;
+	/** Experimentell: Startlink des Launchers, leer heisst selbst starten. */
+	public String launchLink = "";
 	/** Welche Arten des Beendens gemeldet werden sollen. */
 	public boolean triggerOnCrash = true;
 	public boolean triggerOnAltF4 = true;
@@ -54,6 +56,7 @@ public final class WatchSession {
 		properties.setProperty("provider", provider.name());
 		properties.setProperty("autoOpen", Boolean.toString(autoOpen));
 		properties.setProperty("autoRestart", Boolean.toString(autoRestart));
+		properties.setProperty("launchLink", launchLink == null ? "" : launchLink);
 		properties.setProperty("triggerOnCrash", Boolean.toString(triggerOnCrash));
 		properties.setProperty("triggerOnAltF4", Boolean.toString(triggerOnAltF4));
 		properties.setProperty("triggerOnWindowClose", Boolean.toString(triggerOnWindowClose));
@@ -89,6 +92,7 @@ public final class WatchSession {
 		session.provider = AiProvider.byName(properties.getProperty("provider"), AiProvider.CLAUDE);
 		session.autoOpen = Boolean.parseBoolean(properties.getProperty("autoOpen", "false"));
 		session.autoRestart = Boolean.parseBoolean(properties.getProperty("autoRestart", "false"));
+		session.launchLink = properties.getProperty("launchLink", "");
 		session.triggerOnCrash = Boolean.parseBoolean(properties.getProperty("triggerOnCrash", "true"));
 		session.triggerOnAltF4 = Boolean.parseBoolean(properties.getProperty("triggerOnAltF4", "true"));
 		session.triggerOnWindowClose =

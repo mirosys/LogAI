@@ -51,7 +51,7 @@ public final class CrashDialog {
 	}
 
 	public static Choice show(WatchSession session, CrashEvidence evidence, Path report,
-			LocalDateTime crashedAt, boolean copiedAsFile, boolean autoOpened, boolean canRestart) {
+			LocalDateTime crashedAt, boolean copiedAsFile, boolean canRestart) {
 		if (GraphicsEnvironment.isHeadless()) {
 			// Ohne Bildschirm gibt es nichts anzuzeigen, der Bericht liegt trotzdem auf der Platte.
 			System.out.println("LogAI: crash report written to " + report);
@@ -63,8 +63,8 @@ public final class CrashDialog {
 
 		SwingUtilities.invokeLater(() -> {
 			try {
-				buildDialog(session, evidence, report, crashedAt, copiedAsFile, autoOpened, canRestart,
-						choice, closed);
+				buildDialog(session, evidence, report, crashedAt, copiedAsFile, canRestart, choice,
+						closed);
 			} catch (Throwable failure) {
 				// Kein Fenster, kein Warten: der Bericht liegt trotzdem auf der Platte.
 				System.err.println("LogAI: could not show the crash dialog: " + failure);
@@ -82,8 +82,8 @@ public final class CrashDialog {
 	}
 
 	private static void buildDialog(WatchSession session, CrashEvidence evidence, Path report,
-			LocalDateTime crashedAt, boolean copiedAsFile, boolean autoOpened, boolean canRestart,
-			Choice[] choice, CountDownLatch closed) {
+			LocalDateTime crashedAt, boolean copiedAsFile, boolean canRestart, Choice[] choice,
+			CountDownLatch closed) {
 		applySystemLookAndFeel();
 
 		String ai = session.provider.displayName();
@@ -98,7 +98,7 @@ public final class CrashDialog {
 		JPanel content = new JPanel(new BorderLayout(0, 14));
 		content.setBorder(BorderFactory.createEmptyBorder(18, 20, 14, 20));
 		content.add(new JLabel("<html><body style='width: 380px'>"
-				+ escape(message(ai, evidence.shutdownKind(), copiedAsFile, autoOpened))
+				+ escape(message(ai, evidence.shutdownKind(), copiedAsFile))
 				// Nicht jedes harte Schliessen ist ein Problem - manchmal will man einfach weg.
 				+ "<br><br>" + escape("If you closed the game on purpose and nothing was wrong, "
 						+ "you can simply ignore this window.")
@@ -132,9 +132,10 @@ public final class CrashDialog {
 		};
 
 		open.addActionListener(event -> {
-			// Der Bericht liegt bereits in der Zwischenablage, hier fehlt nur noch der Browser.
-			openBrowser(session.provider.newChatUrl());
+			// Erst das Fenster schliessen, dann den Browser rufen: dieses Fenster liegt
+			// immer obenauf und wuerde dem Browser sonst den Fokus wegnehmen.
 			finish.run();
+			openUri(session.provider.newChatUrl());
 		});
 		copyOnly.addActionListener(event -> finish.run());
 		ignore.addActionListener(event -> finish.run());
@@ -145,15 +146,10 @@ public final class CrashDialog {
 			}
 		});
 
-		if (autoOpened) {
-			// Der Browser ist schon offen, es gibt nichts mehr zu entscheiden.
-			buttons.add(copyOnly);
-		} else {
-			buttons.add(ignore);
-			buttons.add(copyOnly);
-			buttons.add(open);
-			dialog.getRootPane().setDefaultButton(open);
-		}
+		buttons.add(ignore);
+		buttons.add(copyOnly);
+		buttons.add(open);
+		dialog.getRootPane().setDefaultButton(open);
 
 		// Das Fenster erscheint mitten im Spielen und reisst sich den Fokus. Wer in dem
 		// Moment noch eine Taste gedrueckt haelt, wuerde sonst ungefragt den Standardbutton
@@ -196,8 +192,7 @@ public final class CrashDialog {
 		arm.start();
 	}
 
-	private static String message(String ai, ShutdownKind kind, boolean copiedAsFile,
-			boolean autoOpened) {
+	private static String message(String ai, ShutdownKind kind, boolean copiedAsFile) {
 		String opening = switch (kind) {
 			case CRASH -> "Minecraft just crashed. ";
 			case ALT_F4 -> "Minecraft was closed with Alt+F4. ";
@@ -212,10 +207,7 @@ public final class CrashDialog {
 
 		String middle;
 
-		if (autoOpened) {
-			middle = ai + " has been opened in your browser and the log file is on your clipboard, "
-					+ "just paste it into the chat and send as is.";
-		} else if (copiedAsFile) {
+		if (copiedAsFile) {
 			middle = "Open " + ai + " in your browser and let it " + job + ". The log file is "
 					+ "on your clipboard, just paste it into the chat and send as is.";
 		} else {
@@ -236,21 +228,34 @@ public final class CrashDialog {
 		};
 	}
 
-	public static void openBrowser(String url) {
-		try {
-			if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
-				Desktop.getDesktop().browse(URI.create(url));
-				return;
+	/**
+	 * Öffnet eine Adresse mit dem, was das System dafür vorgesehen hat - eine Webseite
+	 * im Browser, ein { launcher://}-Link im zugehörigen Programm.
+	 */
+	public static void openUri(String url) {
+		// Desktop.browse ist ausdrücklich für Webseiten da und gibt alles andere an den
+		// Browser weiter. Ein launcher://-Link landet dann dort statt beim Launcher, und
+		// der Browser fragt bestenfalls nach. Deshalb nur für http und https.
+		if (isWebPage(url)) {
+			try {
+				if (Desktop.isDesktopSupported()
+						&& Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+					Desktop.getDesktop().browse(URI.create(url));
+					return;
+				}
+			} catch (Exception ignored) {
+				// Fällt unten auf den Weg über die Shell zurück.
 			}
-		} catch (Exception ignored) {
-			// Fällt unten auf den Kommandozeilen-Weg zurück.
 		}
 
 		String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
 
 		try {
 			if (os.contains("win")) {
-				new ProcessBuilder("rundll32", "url.dll,FileProtocolHandler", url).start();
+				// start reicht die Adresse an das Programm weiter, das für dieses Schema
+				// eingetragen ist. Der leere Titel gehört dazu, sonst nimmt start die
+				// Adresse als Fenstertitel.
+				new ProcessBuilder("cmd.exe", "/c", "start", "", url).start();
 			} else if (os.contains("mac")) {
 				new ProcessBuilder("open", url).start();
 			} else {
@@ -259,6 +264,11 @@ public final class CrashDialog {
 		} catch (Exception ignored) {
 			// Mehr können wir an dieser Stelle nicht tun.
 		}
+	}
+
+	private static boolean isWebPage(String url) {
+		String lower = url.toLowerCase(Locale.ROOT);
+		return lower.startsWith("http://") || lower.startsWith("https://");
 	}
 
 	private static void applySystemLookAndFeel() {

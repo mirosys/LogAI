@@ -25,6 +25,33 @@ public final class RestartCommand {
 	 * sie ab. Wird im Minecraft-Prozess aufgerufen.
 	 */
 	public static void capture(Path file) throws IOException {
+		// Zuerst das Betriebssystem fragen: nur dort stehen die Argumentgrenzen noch so,
+		// wie der Launcher sie gesetzt hat.
+		List<String> command = NativeCommandLine.current();
+
+		if (command.isEmpty()) {
+			command = reconstruct();
+		}
+
+		List<String> standalone = LaunchCommand.standalone(command);
+
+		if (standalone.isEmpty()) {
+			throw new IOException("this launcher does not start Minecraft in a way that can be "
+					+ "repeated on its own");
+		}
+
+		Files.createDirectories(file.getParent());
+		// Eine Zeile pro Argument: Argumente enthalten Leerzeichen, Zeilenumbrüche nie.
+		Files.write(file, standalone, StandardCharsets.UTF_8);
+		restrictToOwner(file);
+	}
+
+	/**
+	 * Notnagel, wenn das Betriebssystem nichts herausgibt: aus dem zusammensetzen, was die
+	 * JVM über sich selbst weiß. Ungenau, weil {@code sun.java.command} die
+	 * Anführungszeichen bereits verloren hat - Pfade mit Leerzeichen zerfallen dabei.
+	 */
+	private static List<String> reconstruct() throws IOException {
 		List<String> command = new ArrayList<>();
 		command.add(ProcessHandle.current().info().command()
 				.orElse(Path.of(System.getProperty("java.home"), "bin", "java").toString()));
@@ -46,14 +73,8 @@ public final class RestartCommand {
 			throw new IOException("this JVM does not expose sun.java.command, cannot restart");
 		}
 
-		for (String part : splitArguments(mainCommand)) {
-			command.add(part);
-		}
-
-		Files.createDirectories(file.getParent());
-		// Eine Zeile pro Argument: Argumente enthalten Leerzeichen, Zeilenumbrüche nie.
-		Files.write(file, command, StandardCharsets.UTF_8);
-		restrictToOwner(file);
+		command.addAll(splitArguments(mainCommand));
+		return command;
 	}
 
 	public static List<String> read(Path file) throws IOException {
@@ -65,13 +86,43 @@ public final class RestartCommand {
 	/**
 	 * Startet das Spiel neu. Der neue Prozess hängt an keinem Launcher mehr, läuft also
 	 * eigenständig weiter.
+	 *
+	 * <p>Die Ausgabe landet in einer Datei statt im Nichts: stirbt der neue Prozess sofort,
+	 * ist das der einzige Ort, an dem der Grund noch steht.
 	 */
-	public static void restart(List<String> command, Path workingDirectory) throws IOException {
+	public static void restart(List<String> command, Path workingDirectory, Path logFile)
+			throws IOException {
+		Files.createDirectories(logFile.getParent());
+		Files.writeString(logFile, "LogAI restart attempt\n" + redacted(command) + "\n\n");
+
 		ProcessBuilder builder = new ProcessBuilder(command);
 		builder.directory(workingDirectory.toFile());
-		builder.redirectOutput(ProcessBuilder.Redirect.DISCARD);
-		builder.redirectError(ProcessBuilder.Redirect.DISCARD);
+		builder.redirectOutput(ProcessBuilder.Redirect.appendTo(logFile.toFile()));
+		builder.redirectErrorStream(true);
 		builder.start();
+	}
+
+	/**
+	 * Die Startzeile fürs Log, ohne den Access-Token. Der gehört in keine Datei, die
+	 * jemand später harmlos weiterreicht.
+	 */
+	private static String redacted(List<String> command) {
+		StringBuilder out = new StringBuilder();
+		boolean hideNext = false;
+
+		for (String part : command) {
+			if (hideNext) {
+				out.append(" <hidden>");
+				hideNext = false;
+				continue;
+			}
+
+			hideNext = part.equalsIgnoreCase("--accessToken") || part.equalsIgnoreCase("--session")
+					|| part.equalsIgnoreCase("--xuid") || part.equalsIgnoreCase("--uuid");
+			out.append(out.isEmpty() ? "" : " ").append(part);
+		}
+
+		return out.toString();
 	}
 
 	/**

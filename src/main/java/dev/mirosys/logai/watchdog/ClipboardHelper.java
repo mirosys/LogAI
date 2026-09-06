@@ -22,6 +22,13 @@ import java.util.List;
  * Watcher darf deshalb erst beendet werden, wenn der Nutzer das Fenster schließt.
  */
 public final class ClipboardHelper implements ClipboardOwner {
+	/** Zählt herunter, sobald ein anderes Programm die Zwischenablage übernimmt. */
+	private static final java.util.concurrent.CountDownLatch TAKEN =
+			new java.util.concurrent.CountDownLatch(1);
+
+	/** Wie lange der Watcher unter Linux still im Hintergrund wartet. */
+	private static final long HOLD_MINUTES = 10;
+
 	private ClipboardHelper() {
 	}
 
@@ -53,7 +60,31 @@ public final class ClipboardHelper implements ClipboardOwner {
 
 	@Override
 	public void lostOwnership(Clipboard clipboard, Transferable contents) {
-		// Der Nutzer hat etwas anderes kopiert. Nichts zu tun.
+		// Etwas anderes wurde kopiert - oder der Nutzer hat eingefügt und der Inhalt ist
+		// angekommen. Ab hier muss dieser Prozess nichts mehr festhalten.
+		TAKEN.countDown();
+	}
+
+	/**
+	 * Hält den Prozess am Leben, solange die Zwischenablage ihn dafür braucht.
+	 *
+	 * <p>Unter Linux gehört der Inhalt dem Prozess, der ihn hineingelegt hat: endet er,
+	 * ist die Zwischenablage leer. Wenn kein Fenster offen bleibt, muss der Watcher
+	 * deshalb still im Hintergrund warten. Windows und macOS legen den Inhalt selbst ab
+	 * und brauchen das nicht.
+	 */
+	public static void holdWhileNeeded() {
+		String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
+
+		if (os.contains("win") || os.contains("mac")) {
+			return;
+		}
+
+		try {
+			TAKEN.await(HOLD_MINUTES, java.util.concurrent.TimeUnit.MINUTES);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+		}
 	}
 
 	private record FileTransferable(File file) implements Transferable {
