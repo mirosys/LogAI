@@ -51,7 +51,7 @@ public class SetupSignInScreen extends SetupScreen {
 		if (this.openedLoginPage) {
 			this.addRenderableWidget(Button
 					.builder(Component.literal("Open it again"),
-							button -> CrashDialog.openBrowser(this.config.provider().loginUrl()))
+							button -> CrashDialog.openUri(this.config.provider().loginUrl()))
 					.bounds(centerX - 130, top, 260, 20)
 					.build());
 
@@ -64,7 +64,7 @@ public class SetupSignInScreen extends SetupScreen {
 
 		this.addRenderableWidget(Button
 				.builder(Component.literal("No, let me sign in"), button -> {
-					CrashDialog.openBrowser(this.config.provider().loginUrl());
+					CrashDialog.openUri(this.config.provider().loginUrl());
 					this.openedLoginPage = true;
 					this.rebuildWidgets();
 				})

@@ -146,7 +146,7 @@ public final class CrashWatcher {
 		if (session.autoOpen) {
 			// Automatik heisst automatisch: kein Fenster, das sich vor den Browser schiebt
 			// und ihm den Fokus wegnimmt. Was zu tun ist, steht in den Einstellungen.
-			CrashDialog.openBrowser(session.provider.newChatUrl());
+			CrashDialog.openUri(session.provider.newChatUrl());
 
 			if (session.autoRestart && canRestart) {
 				restartGame(session);
@@ -173,14 +173,27 @@ public final class CrashWatcher {
 	 * beim Laden, würde ein Neustart bloss die Schleife Absturz-Neustart-Absturz eröffnen.
 	 */
 	private static boolean canRestart(WatchSession session, long processEndMillis) {
-		if (!Files.isReadable(session.restartCommandFile)) {
+		if (processEndMillis - session.startedAt < MIN_UPTIME_FOR_RESTART_MILLIS) {
 			return false;
 		}
 
-		return processEndMillis - session.startedAt >= MIN_UPTIME_FOR_RESTART_MILLIS;
+		// Mit hinterlegtem Startlink braucht es die aufgezeichnete Startzeile nicht.
+		if (session.launchLink != null && !session.launchLink.isBlank()) {
+			return true;
+		}
+
+		return Files.isReadable(session.restartCommandFile);
 	}
 
 	private static void restartGame(WatchSession session) {
+		// Wenn der Nutzer einen Startlink hinterlegt hat, soll der Launcher das Spiel
+		// starten - dann bleibt auch dessen eigene Anzeige richtig.
+		if (session.launchLink != null && !session.launchLink.isBlank()) {
+			System.out.println("LogAI: asking the launcher to restart Minecraft");
+			CrashDialog.openUri(session.launchLink);
+			return;
+		}
+
 		try {
 			RestartCommand.restart(RestartCommand.read(session.restartCommandFile), session.gameDir,
 					session.reportDir.resolveSibling("restart.log"));

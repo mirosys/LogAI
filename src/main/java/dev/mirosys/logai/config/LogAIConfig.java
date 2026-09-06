@@ -37,6 +37,8 @@ public final class LogAIConfig {
 	public boolean triggerOnQuit = false;
 	/** Überschreibt die automatische Launcher-Erkennung, wenn gesetzt. */
 	public String launcherOverride = "";
+	/** Experimentell: Link, mit dem der Launcher gebeten wird, die Instanz zu starten. */
+	public String launchLink = "";
 
 	private transient Path file;
 	private transient boolean existed;

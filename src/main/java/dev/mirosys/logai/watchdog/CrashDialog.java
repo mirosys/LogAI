@@ -135,7 +135,7 @@ public final class CrashDialog {
 			// Erst das Fenster schliessen, dann den Browser rufen: dieses Fenster liegt
 			// immer obenauf und wuerde dem Browser sonst den Fokus wegnehmen.
 			finish.run();
-			openBrowser(session.provider.newChatUrl());
+			openUri(session.provider.newChatUrl());
 		});
 		copyOnly.addActionListener(event -> finish.run());
 		ignore.addActionListener(event -> finish.run());
@@ -228,7 +228,11 @@ public final class CrashDialog {
 		};
 	}
 
-	public static void openBrowser(String url) {
+	/**
+	 * Öffnet eine Adresse mit dem, was das System dafür vorgesehen hat - eine Webseite
+	 * im Browser, ein { launcher://}-Link im zugehörigen Programm.
+	 */
+	public static void openUri(String url) {
 		try {
 			if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
 				Desktop.getDesktop().browse(URI.create(url));

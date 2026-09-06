@@ -149,6 +149,7 @@ public final class LogAIRuntime {
 		target.provider = config.provider();
 		target.autoOpen = config.autoOpen;
 		target.autoRestart = config.autoRestart;
+		target.launchLink = config.launchLink == null ? "" : config.launchLink;
 		target.triggerOnCrash = config.triggerOnCrash;
 		target.triggerOnAltF4 = config.triggerOnAltF4;
 		target.triggerOnWindowClose = config.triggerOnWindowClose;

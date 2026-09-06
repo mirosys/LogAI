@@ -65,7 +65,7 @@ public class LogAISettingsScreen extends Screen {
 
 		this.addRenderableWidget(Button
 				.builder(Component.literal("Make sure I am signed in"),
-						button -> CrashDialog.openBrowser(this.config.provider().loginUrl()))
+						button -> CrashDialog.openUri(this.config.provider().loginUrl()))
 				.bounds(left, top + 4 * ROW_HEIGHT, WIDTH, 20)
 				.build());
 
@@ -78,6 +78,18 @@ public class LogAISettingsScreen extends Screen {
 				.build());
 
 		this.addRenderableWidget(Button
+				.builder(Texts.dim("Experimental").append(
+						this.config.launchLink == null || this.config.launchLink.isBlank()
+								? Component.empty()
+								: Texts.accent(":  1 in use")),
+						button -> {
+							this.config.save();
+							this.minecraft.setScreenAndShow(new ExperimentalScreen(this));
+						})
+				.bounds(left, top + 6 * ROW_HEIGHT, WIDTH, 20)
+				.build());
+
+		this.addRenderableWidget(Button
 				.builder(Texts.warn("Test: crash this game now"), button -> {
 					// halt() umgeht das geordnete Herunterfahren und sieht fuer den Watcher
 					// deshalb aus wie ein echter harter Absturz.
@@ -85,7 +97,7 @@ public class LogAISettingsScreen extends Screen {
 					LogAIRuntime.markTestCrash();
 					Runtime.getRuntime().halt(1);
 				})
-				.bounds(left, top + 7 * ROW_HEIGHT, WIDTH, 20)
+				.bounds(left, top + 8 * ROW_HEIGHT, WIDTH, 20)
 				.build());
 
 		this.addRenderableWidget(Button
@@ -126,6 +138,6 @@ public class LogAISettingsScreen extends Screen {
 				centerX, 40, 0xFF9A9AA6);
 		graphics.centeredText(this.font,
 				Texts.warn("The test button closes Minecraft on purpose. Save your world first."),
-				centerX, 60 + 6 * ROW_HEIGHT + 8, 0xFFFFAA00);
+				centerX, 60 + 7 * ROW_HEIGHT + 8, 0xFFFFAA00);
 	}
 }
