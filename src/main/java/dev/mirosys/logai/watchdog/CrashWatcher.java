@@ -141,15 +141,25 @@ public final class CrashWatcher {
 		Path report = ReportBuilder.build(session, evidence, crashedAt);
 
 		boolean copiedAsFile = ClipboardHelper.copyAsFile(report);
+		boolean canRestart = canRestart(session, processEndMillis);
 
 		if (session.autoOpen) {
+			// Automatik heisst automatisch: kein Fenster, das sich vor den Browser schiebt
+			// und ihm den Fokus wegnimmt. Was zu tun ist, steht in den Einstellungen.
 			CrashDialog.openBrowser(session.provider.newChatUrl());
+
+			if (session.autoRestart && canRestart) {
+				restartGame(session);
+			}
+
+			ClipboardHelper.holdWhileNeeded();
+			return;
 		}
 
 		CrashDialog.Choice choice = CrashDialog.show(session, evidence, report, crashedAt,
-				copiedAsFile, session.autoOpen, canRestart(session, processEndMillis));
+				copiedAsFile, canRestart);
 
-		if (choice.alwaysAuto() && !session.autoOpen) {
+		if (choice.alwaysAuto()) {
 			rememberAutoOpen(session);
 		}
 
