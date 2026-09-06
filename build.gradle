@@ -92,3 +92,26 @@ tasks.register('resetLogAIConfig') {
 tasks.named('copyToMods') {
 	finalizedBy 'resetLogAIConfig'
 }
+
+// Beim Versionswechsel bliebe sonst das Jar der alten Version im mods-Ordner liegen,
+// und Fabric verweigert den Start, wenn es denselben Mod zweimal findet.
+tasks.named('copyToMods') {
+	doFirst {
+		def target = project.findProperty('mods_dir')
+
+		if (target != null && !target.toString().isBlank()) {
+			file(target.toString()).listFiles()?.each { existing ->
+				if (existing.name.startsWith("${project.base.archivesName.get()}-")
+						&& existing.name.endsWith('.jar')
+						&& existing.name != "${project.base.archivesName.get()}-${project.version}.jar") {
+					if (existing.delete()) {
+						logger.lifecycle("LogAI: removed stale ${existing.name}")
+					} else {
+						logger.warn("LogAI: could NOT remove ${existing.name} - close Minecraft, "
+								+ "otherwise Fabric will refuse to start with two versions of the mod")
+					}
+				}
+			}
+		}
+	}
+}

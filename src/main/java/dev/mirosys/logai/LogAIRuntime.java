@@ -181,12 +181,19 @@ public final class LogAIRuntime {
 	 * fehl, faellt nur der Neustart weg - alles andere funktioniert weiter.
 	 */
 	private static void captureRestartCommand(Path file) {
-		try {
-			RestartCommand.capture(file);
-		} catch (Exception e) {
-			LogAI.LOGGER.warn("Could not record the restart command, restarting after a crash "
-					+ "will not be offered", e);
-		}
+		// Das Betriebssystem nach der Startzeile zu fragen dauert unter Windows fast eine
+		// Sekunde. Das gehört nicht in den Spielstart - gebraucht wird die Datei erst,
+		// wenn das Spiel zu Ende ist.
+		Thread capture = new Thread(() -> {
+			try {
+				RestartCommand.capture(file);
+			} catch (Exception e) {
+				LogAI.LOGGER.warn("Could not record the restart command, restarting after a crash "
+						+ "will not be offered: {}", e.getMessage());
+			}
+		}, "LogAI-restart-command");
+		capture.setDaemon(true);
+		capture.start();
 	}
 
 	private static void deleteQuietly(Path path) {

@@ -172,7 +172,8 @@ public final class CrashWatcher {
 
 	private static void restartGame(WatchSession session) {
 		try {
-			RestartCommand.restart(RestartCommand.read(session.restartCommandFile), session.gameDir);
+			RestartCommand.restart(RestartCommand.read(session.restartCommandFile), session.gameDir,
+					session.reportDir.resolveSibling("restart.log"));
 			System.out.println("LogAI: restarting Minecraft");
 		} catch (IOException e) {
 			System.err.println("LogAI watcher: could not restart Minecraft: " + e);
