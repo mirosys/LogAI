@@ -2,21 +2,17 @@ package dev.mirosys.logai.client;
 
 import java.util.List;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
 /**
- * Schritt 1: erklären, was der Mod tut, und die KI auswählen lassen.
- *
- * <p>Die Auswahl ist der Weiter-Knopf: ein Klick auf eine KI übernimmt sie und führt
- * direkt zum nächsten Schritt.
+ * Step 1: explain what the mod does and let the user pick an AI. Picking one is the
+ * "continue" button.
  */
 public final class SetupIntroScreen {
-	private SetupIntroScreen() {
-	}
-
 	private static final List<Component> BODY = List.of(
-			Texts.accent("LogAI watches this Minecraft instance from a separate process."),
+			Texts.emphasis("LogAI watches this Minecraft instance from a separate process."),
 			Texts.blank(),
 			Texts.dim("When the game crashes it collects the log, puts it on your clipboard"),
 			Texts.dim("and offers to open the AI of your choice, so it can tell you what broke."),
@@ -26,10 +22,11 @@ public final class SetupIntroScreen {
 			Texts.blank(),
 			Texts.warn("Which AI do you want to use?"));
 
-	/** Baut Schritt 1 als KI-Auswahl, die anschliessend zu Schritt 2 führt. */
+	private SetupIntroScreen() {
+	}
+
 	public static Screen create(Screen parent) {
 		return new AiChooserScreen(parent, Texts.brand(), BODY,
-				provider -> net.minecraft.client.Minecraft.getInstance()
-						.setScreenAndShow(new SetupSignInScreen(parent)));
+				provider -> Minecraft.getInstance().setScreenAndShow(new SetupSignInScreen(parent)));
 	}
 }

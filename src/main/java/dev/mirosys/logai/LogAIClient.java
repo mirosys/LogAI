@@ -22,64 +22,35 @@ import dev.mirosys.logai.config.LogAIConfig;
 import dev.mirosys.logai.watchdog.ShutdownKind;
 
 /**
- * Alles, was Minecraft-Klassen braucht. Der eigentliche Absturz-Melder läuft schon
- * vorher, siehe {@link LogAIPreLaunch}.
+ * Everything that needs Minecraft classes. The crash reporter itself is already running
+ * by the time this is reached, see {@link LogAIPreLaunch}.
  */
 public final class LogAIClient implements ClientModInitializer {
-	/** Verhindert, dass die Einrichtung nach dem Schließen sofort wiederkommt. */
-	private static boolean setupShown;
-
 	/**
-	 * Wie lange ein gesehener Alt+F4-Griff als Erklärung fürs Schließen gilt. Zwischen
-	 * Tastendruck und Ende des Herunterfahrens vergeht bei vielen Mods gut eine Sekunde.
+	 * How long a seen Alt+F4 counts as the explanation for a close. Between the key press
+	 * and the end of shutdown, a big modpack easily takes a second or two.
 	 */
 	private static final long ALT_F4_MEMORY_MILLIS = 4000L;
 
 	private static long altF4SeenAt;
+	/** Keeps the setup from reappearing right after it was closed. */
+	private static boolean setupShown;
 
 	@Override
 	public void onInitializeClient() {
-		// Normalerweise ist das längst passiert, aber falls preLaunch übersprungen wurde,
-		// ist ein später Start immer noch besser als gar keiner.
+		// Normally long done, but if preLaunch was skipped a late start still beats none.
 		LogAIRuntime.bootstrap();
 
-		registerCleanExitMarker();
+		registerShutdownMarker();
 		registerAltF4Watch();
 		registerSetupScreen();
 	}
 
 	/**
-	 * Merkt sich, wann Alt+F4 zuletzt gedrückt war.
-	 *
-	 * <p>Der Tastendruck ist das einzige Signal, das Alt+F4 von einem Klick aufs X oder
-	 * vom Task-Manager unterscheidet - danach sind alle drei dieselbe Fenster-Nachricht.
-	 * Bei einem eingefrorenen Spiel tickt hier nichts mehr, dann bleibt es beim
-	 * allgemeinen "von außen geschlossen", was auch ehrlicher ist.
+	 * Written on every orderly shutdown, with the kind of shutdown as its content. Alt+F4
+	 * counts as orderly too: Minecraft handles it like a normal quit.
 	 */
-	private static void registerAltF4Watch() {
-		ClientTickEvents.END_CLIENT_TICK.register(client -> {
-			if (client.getWindow() == null) {
-				return;
-			}
-
-			boolean alt = InputConstants.isKeyDown(client.getWindow(), GLFW.GLFW_KEY_LEFT_ALT)
-					|| InputConstants.isKeyDown(client.getWindow(), GLFW.GLFW_KEY_RIGHT_ALT);
-
-			if (alt && InputConstants.isKeyDown(client.getWindow(), GLFW.GLFW_KEY_F4)) {
-				altF4SeenAt = System.currentTimeMillis();
-			}
-		});
-	}
-
-	public static LogAIConfig config() {
-		return LogAIRuntime.config();
-	}
-
-	/**
-	 * Wird bei jedem geordneten Herunterfahren geschrieben - also auch bei Alt+F4, weil
-	 * das in Minecraft ebenfalls ein normales Beenden auslöst.
-	 */
-	private static void registerCleanExitMarker() {
+	private static void registerShutdownMarker() {
 		Path markerFile = LogAIRuntime.markerFile();
 
 		if (markerFile == null) {
@@ -100,12 +71,12 @@ public final class LogAIClient implements ClientModInitializer {
 	}
 
 	/**
-	 * Unterscheidet den Beenden-Knopf im Spiel von Alt+F4 und Konsorten.
+	 * Tells the in-game quit button apart from Alt+F4 and friends.
 	 *
-	 * <p>{@code Minecraft.stop()} setzt nur ein eigenes Feld, während das Schließen-Flag
-	 * des Fensters ausschließlich vom Fenstersystem gesetzt wird - also von Alt+F4, dem X
-	 * am Fenster oder einem Schließen-Wunsch des Task-Managers. Reines Auslesen, Minecrafts
-	 * eigener Fenster-Callback bleibt unangetastet.
+	 * <p>{@code Minecraft.stop()} only sets a field of its own, while the window's close
+	 * flag is set exclusively by the window system - Alt+F4, the X button, or a close
+	 * request from the task manager. Read-only; Minecraft's own window callback is left
+	 * alone.
 	 */
 	private static ShutdownKind detectShutdownKind(Minecraft client) {
 		try {
@@ -113,13 +84,12 @@ public final class LogAIClient implements ClientModInitializer {
 				return ShutdownKind.QUIT;
 			}
 		} catch (Throwable ignored) {
-			// Im Zweifel lieber melden als schweigen.
+			// When in doubt, report rather than stay silent.
 			return ShutdownKind.WINDOW_CLOSE;
 		}
 
-		// Weiter als bis hier lässt sich nicht aufschlüsseln: das X am Fenster und
-		// "Task beenden" senden dieselbe Nachricht. Nur Alt+F4 hat sich vorher über die
-		// Tastatur verraten - sofern das Spiel da noch auf Eingaben reagiert hat.
+		// This is as far as it goes: the X button and "End task" send the same message.
+		// Only Alt+F4 gave itself away earlier - provided the game was still responding.
 		boolean recentAltF4 = altF4SeenAt > 0
 				&& System.currentTimeMillis() - altF4SeenAt <= ALT_F4_MEMORY_MILLIS;
 
@@ -127,8 +97,29 @@ public final class LogAIClient implements ClientModInitializer {
 	}
 
 	/**
-	 * Zeigt die Einrichtung beim ersten Start und nach jedem Versionswechsel - dann
-	 * allerdings nur als kurze Rückfrage, ob die bisherigen Einstellungen bleiben sollen.
+	 * Remembers when Alt+F4 was last held down. The key press is the only thing that
+	 * separates Alt+F4 from the X button or the task manager. A frozen game no longer
+	 * ticks, so there it stays at the general "closed from outside" - which is also more
+	 * honest.
+	 */
+	private static void registerAltF4Watch() {
+		ClientTickEvents.END_CLIENT_TICK.register(client -> {
+			if (client.getWindow() == null) {
+				return;
+			}
+
+			boolean alt = InputConstants.isKeyDown(client.getWindow(), GLFW.GLFW_KEY_LEFT_ALT)
+					|| InputConstants.isKeyDown(client.getWindow(), GLFW.GLFW_KEY_RIGHT_ALT);
+
+			if (alt && InputConstants.isKeyDown(client.getWindow(), GLFW.GLFW_KEY_F4)) {
+				altF4SeenAt = System.currentTimeMillis();
+			}
+		});
+	}
+
+	/**
+	 * Shows the setup on the first start and after every version change - then only as a
+	 * short question whether to keep the existing settings.
 	 */
 	private static void registerSetupScreen() {
 		ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> {

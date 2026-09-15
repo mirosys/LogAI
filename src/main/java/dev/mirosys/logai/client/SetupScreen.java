@@ -10,20 +10,20 @@ import dev.mirosys.logai.LogAIRuntime;
 import dev.mirosys.logai.config.LogAIConfig;
 
 /**
- * Gemeinsame Grundlage der Einrichtungs-Schritte.
+ * Common ground for the setup steps and the settings sub-screens.
  *
- * <p>Der Text steht in einem abgesetzten Kasten statt frei über dem Spielhintergrund -
- * über einer hellen Landschaft oder einem Shader-Himmel ist graue Schrift sonst kaum
- * lesbar.
+ * <p>The text sits on a dark band like the lists in Minecraft's own menus, rather than
+ * floating over the world: over a bright landscape or a shader sky, grey text on nothing
+ * is hard to read.
  */
 public abstract class SetupScreen extends Screen {
-	/** Füllung des Textkastens: fast deckend, damit die Welt dahinter nicht stört. */
-	private static final int PANEL_FILL = 0xE0101014;
-	private static final int PANEL_BORDER = 0xFF4C4C55;
-	/** Schmaler Farbstreifen oben, damit der Kasten nicht wie ein grauer Block wirkt. */
-	private static final int PANEL_ACCENT = 0xFF6EA8FF;
+	private static final int BAND_FILL = 0xA0000000;
+	private static final int BAND_EDGE = 0xFF000000;
+	private static final int TITLE_COLOR = 0xFFFFFFFF;
+	private static final int BODY_COLOR = 0xFFA0A0A0;
+	private static final int FOOTER_COLOR = 0xFF808080;
 
-	private static final int PANEL_HALF_WIDTH = 200;
+	private static final int BAND_HALF_WIDTH = 200;
 	private static final int LINE_HEIGHT = 12;
 
 	protected final Screen parent;
@@ -38,21 +38,21 @@ public abstract class SetupScreen extends Screen {
 		this.parent = parent;
 	}
 
-	/** Die Zeilen im Textkasten. */
+	/** The lines shown on the band. */
 	protected abstract List<Component> body();
 
-	/** Optionale Zeilen direkt über den Schaltflächen, dezenter gesetzt. */
+	/** Optional lines right above the buttons, set a little quieter. */
 	protected List<Component> footer() {
 		return List.of();
 	}
 
-	/** Verlässt die Einrichtung und merkt sich, dass sie für diese Version erledigt ist. */
+	/** Leaves the setup and remembers that it is done for this version. */
 	protected void finishSetup() {
 		this.config.markSetupDone(LogAIRuntime.modVersion());
 		this.minecraft.setScreenAndShow(this.parent);
 	}
 
-	/** Die y-Position, ab der die Schaltflächen stehen. */
+	/** Where the buttons start. */
 	protected int buttonTop() {
 		return this.height - 92;
 	}
@@ -64,17 +64,16 @@ public abstract class SetupScreen extends Screen {
 		int centerX = this.width / 2;
 		List<Component> body = this.body();
 
-		int panelTop = 46;
-		int panelBottom = panelTop + 14 + body.size() * LINE_HEIGHT;
-		drawPanel(graphics, centerX - PANEL_HALF_WIDTH, panelTop, centerX + PANEL_HALF_WIDTH,
-				panelBottom);
+		int bandTop = 46;
+		int bandBottom = bandTop + 14 + body.size() * LINE_HEIGHT;
+		drawBand(graphics, centerX - BAND_HALF_WIDTH, bandTop, centerX + BAND_HALF_WIDTH, bandBottom);
 
-		graphics.centeredText(this.font, this.title, centerX, 26, 0xFFFFFFFF);
+		graphics.centeredText(this.font, this.title, centerX, 26, TITLE_COLOR);
 
-		int y = panelTop + 9;
+		int y = bandTop + 9;
 
 		for (Component line : body) {
-			graphics.centeredText(this.font, line, centerX, y, 0xFFC6C6D0);
+			graphics.centeredText(this.font, line, centerX, y, BODY_COLOR);
 			y += LINE_HEIGHT;
 		}
 
@@ -84,17 +83,15 @@ public abstract class SetupScreen extends Screen {
 			int footerY = this.buttonTop() - 12 - footer.size() * LINE_HEIGHT;
 
 			for (Component line : footer) {
-				graphics.centeredText(this.font, line, centerX, footerY, 0xFF9A9AA6);
+				graphics.centeredText(this.font, line, centerX, footerY, FOOTER_COLOR);
 				footerY += LINE_HEIGHT;
 			}
 		}
 	}
 
-	private static void drawPanel(GuiGraphicsExtractor graphics, int x1, int y1, int x2, int y2) {
-		graphics.fill(x1, y1, x2, y2, PANEL_FILL);
-		graphics.fill(x1, y1, x2, y1 + 1, PANEL_ACCENT);
-		graphics.fill(x1, y2 - 1, x2, y2, PANEL_BORDER);
-		graphics.fill(x1, y1, x1 + 1, y2, PANEL_BORDER);
-		graphics.fill(x2 - 1, y1, x2, y2, PANEL_BORDER);
+	private static void drawBand(GuiGraphicsExtractor graphics, int x1, int y1, int x2, int y2) {
+		graphics.fill(x1, y1, x2, y2, BAND_FILL);
+		graphics.fill(x1, y1, x2, y1 + 1, BAND_EDGE);
+		graphics.fill(x1, y2 - 1, x2, y2, BAND_EDGE);
 	}
 }

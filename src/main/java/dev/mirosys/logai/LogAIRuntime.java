@@ -1,8 +1,10 @@
 package dev.mirosys.logai;
 
 import java.io.IOException;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 
 import net.fabricmc.loader.api.FabricLoader;
 
@@ -13,14 +15,17 @@ import dev.mirosys.logai.watchdog.WatchSession;
 import dev.mirosys.logai.watchdog.WatcherLauncher;
 
 /**
- * Der Teil des Mods, der so früh wie möglich laufen muss: Konfiguration lesen und den
- * Watcher starten.
+ * The part of the mod that has to run as early as possible: read the config and start
+ * the watcher.
  *
- * <p>Angestoßen wird das vom {@code preLaunch}-Einstiegspunkt, also noch bevor Minecraft
- * selbst startet. Damit ist auch ein Absturz während des Ladens abgedeckt - genau dann,
- * wenn es am ehesten kracht. Nichts hier darf Minecraft-Klassen anfassen.
+ * <p>Triggered from the {@code preLaunch} entrypoint, before Minecraft itself starts, so a
+ * crash during loading is covered too - that is when things fail most often. Nothing in
+ * here may touch Minecraft classes.
  */
 public final class LogAIRuntime {
+	/** restart.log mirrors a whole session's console output; keep only the head. */
+	private static final long RESTART_LOG_KEEP_BYTES = 32 * 1024;
+
 	private static LogAIConfig config;
 	private static Path stateDir;
 	private static Path markerFile;
@@ -33,8 +38,8 @@ public final class LogAIRuntime {
 	}
 
 	/**
-	 * Mehrfach aufrufbar: der Client-Einstiegspunkt ruft das noch einmal auf, falls
-	 * {@code preLaunch} aus irgendeinem Grund nicht durchgelaufen ist.
+	 * Safe to call more than once: the client entrypoint calls it again in case
+	 * {@code preLaunch} did not run for whatever reason.
 	 */
 	public static synchronized void bootstrap() {
 		if (started) {
@@ -51,18 +56,18 @@ public final class LogAIRuntime {
 			modVersion = versionOf(LogAI.MOD_ID);
 
 			config = LogAIConfig.load(loader.getConfigDir().resolve("logai.json"));
-			// Jede gespeicherte Aenderung soll sofort beim Watcher ankommen, nicht erst
-			// beim naechsten Spielstart.
+			// Every saved change should reach the watcher right away, not on the next start.
 			config.onSaved(LogAIRuntime::refreshWatchSession);
 			applyPendingAutoOpen();
 
-			// Marker der letzten Sitzung sind für diese bedeutungslos.
+			// Leftovers from the previous session mean nothing to this one.
 			deleteQuietly(markerFile);
 			deleteQuietly(stateDir.resolve("test-crash"));
+			trimRestartLog();
 
 			startWatcher(gameDir);
 		} catch (Throwable failure) {
-			// Ein kaputter Crash-Melder darf niemals den Spielstart verhindern.
+			// A broken crash reporter must never keep the game from starting.
 			LogAI.LOGGER.error("LogAI could not start up, crashes will not be reported", failure);
 
 			if (config == null) {
@@ -88,8 +93,8 @@ public final class LogAIRuntime {
 	}
 
 	/**
-	 * Hinterlässt dem Watcher die Notiz, dass der nächste Absturz absichtlich war.
-	 * Sonst schickt der Bericht die KI auf die Suche nach einer Ursache, die es nicht gibt.
+	 * Leaves a note for the watcher that the next crash is deliberate. Otherwise the report
+	 * would send the AI looking for a cause that does not exist.
 	 */
 	public static void markTestCrash() {
 		try {
@@ -101,8 +106,8 @@ public final class LogAIRuntime {
 	}
 
 	/**
-	 * Der Watcher kann die JSON-Konfiguration nicht schreiben, deshalb hinterlässt er dort
-	 * nur einen Zettel, den wir hier einlösen.
+	 * The watcher cannot write the JSON config, so it leaves a note instead, which we
+	 * cash in here.
 	 */
 	private static void applyPendingAutoOpen() {
 		Path pending = stateDir.resolve("pending-auto-open");
@@ -126,9 +131,8 @@ public final class LogAIRuntime {
 		session.logFile = gameDir.resolve("logs").resolve("latest.log");
 		session.markerFile = markerFile;
 		session.testMarkerFile = stateDir.resolve("test-crash");
-		session.reportDir = stateDir.resolve("reports");
 		session.restartCommandFile = stateDir.resolve("restart-command");
-		captureRestartCommand(session.restartCommandFile);
+		session.reportDir = stateDir.resolve("reports");
 		session.launcher = config.launcherOverride == null || config.launcherOverride.isBlank()
 				? LauncherDetector.detect(gameDir)
 				: config.launcherOverride;
@@ -137,6 +141,8 @@ public final class LogAIRuntime {
 		session.modVersion = modVersion;
 		session.startedAt = System.currentTimeMillis();
 		applySettings(session);
+
+		captureRestartCommand(session.restartCommandFile);
 
 		try {
 			WatcherLauncher.start(session, sessionFile);
@@ -157,11 +163,11 @@ public final class LogAIRuntime {
 	}
 
 	/**
-	 * Schreibt die geänderten Einstellungen für den bereits laufenden Watcher heraus.
+	 * Writes the changed settings out for the watcher that is already running.
 	 *
-	 * <p>Ohne das würde jede Änderung erst beim nächsten Spielstart wirken: der Watcher
-	 * bekommt seine Werte beim Start als Momentaufnahme, und er ist nach dem Absturz der
-	 * Einzige, der noch lebt. Er liest die Datei deshalb im Absturzmoment noch einmal.
+	 * <p>Without this every change would only take effect on the next game start: the
+	 * watcher gets its values as a snapshot at startup, and after a crash it is the only
+	 * one still alive. So it re-reads the file at that moment.
 	 */
 	private static void refreshWatchSession() {
 		if (session == null || sessionFile == null) {
@@ -178,13 +184,11 @@ public final class LogAIRuntime {
 	}
 
 	/**
-	 * Legt die Startzeile ab, damit der Watcher das Spiel neu starten kann. Schlaegt das
-	 * fehl, faellt nur der Neustart weg - alles andere funktioniert weiter.
+	 * Records the command line so the watcher can restart the game. Asking the OS for it
+	 * takes close to a second on Windows, which does not belong in the game's startup -
+	 * the file is only needed once the game has ended, so this runs in the background.
 	 */
 	private static void captureRestartCommand(Path file) {
-		// Das Betriebssystem nach der Startzeile zu fragen dauert unter Windows fast eine
-		// Sekunde. Das gehört nicht in den Spielstart - gebraucht wird die Datei erst,
-		// wenn das Spiel zu Ende ist.
 		Thread capture = new Thread(() -> {
 			try {
 				RestartCommand.capture(file);
@@ -195,6 +199,24 @@ public final class LogAIRuntime {
 		}, "LogAI-restart-command");
 		capture.setDaemon(true);
 		capture.start();
+	}
+
+	/**
+	 * A restarted game writes its whole console output into restart.log. The head is what
+	 * matters for diagnosing a failed start; the rest is a copy of latest.log.
+	 */
+	private static void trimRestartLog() {
+		Path log = stateDir.resolve("restart.log");
+
+		try {
+			if (Files.exists(log) && Files.size(log) > RESTART_LOG_KEEP_BYTES) {
+				try (FileChannel channel = FileChannel.open(log, StandardOpenOption.WRITE)) {
+					channel.truncate(RESTART_LOG_KEEP_BYTES);
+				}
+			}
+		} catch (IOException e) {
+			LogAI.LOGGER.warn("Could not trim {}", log, e);
+		}
 	}
 
 	private static void deleteQuietly(Path path) {

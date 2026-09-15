@@ -9,10 +9,13 @@ import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 
 /**
- * Einstellungen, die nur bei bestimmten Launchern funktionieren und deshalb nicht in die
- * regulären gehören.
+ * Settings that only work with some launchers, and therefore do not belong with the
+ * regular ones.
  */
 public class ExperimentalScreen extends SetupScreen {
+	/** Anything that has a scheme, like {@code name://something}. */
+	private static final String LINK_PATTERN = "(?i)[a-z][a-z0-9+.-]*://.+";
+
 	private EditBox launchLink;
 
 	public ExperimentalScreen(Screen parent) {
@@ -32,7 +35,7 @@ public class ExperimentalScreen extends SetupScreen {
 				Texts.dim("link here and LogAI will try it first. If nothing starts within twenty"),
 				Texts.dim("seconds, LogAI restarts the game itself, so you are never left waiting."),
 				Texts.blank(),
-				Texts.accent("Modrinth App:  modrinth://launch/instance/<instance id>"),
+				Texts.emphasis("Modrinth App:  modrinth://launch/instance/<instance id>"),
 				Texts.warn("Not yet confirmed to work - the app accepts the link but may ignore it."));
 	}
 
@@ -43,11 +46,10 @@ public class ExperimentalScreen extends SetupScreen {
 
 	@Override
 	protected void init() {
-		int centerX = this.width / 2;
+		int left = this.width / 2 - 170;
 		int top = this.buttonTop();
 
-		this.launchLink = new EditBox(this.font, centerX - 170, top, 340, 20,
-				Component.literal("Launch link"));
+		this.launchLink = new EditBox(this.font, left, top, 340, 20, Component.literal("Launch link"));
 		this.launchLink.setMaxLength(512);
 		this.launchLink.setValue(this.config.launchLink == null ? "" : this.config.launchLink);
 		this.launchLink.setResponder(value -> this.config.launchLink = value.strip());
@@ -58,12 +60,12 @@ public class ExperimentalScreen extends SetupScreen {
 					this.launchLink.setValue("");
 					this.config.launchLink = "";
 				})
-				.bounds(centerX - 170, top + 26, 165, 20)
+				.bounds(left, top + 26, 165, 20)
 				.build());
 
 		this.addRenderableWidget(Button
 				.builder(CommonComponents.GUI_DONE, button -> this.onClose())
-				.bounds(centerX + 5, top + 26, 165, 20)
+				.bounds(left + 175, top + 26, 165, 20)
 				.build());
 	}
 
@@ -75,9 +77,9 @@ public class ExperimentalScreen extends SetupScreen {
 			return List.of(Texts.dim("Empty means LogAI restarts the game on its own."));
 		}
 
-		// Nur eine Kennung ohne Schema ist der häufigste Fehler: das Betriebssystem
-		// hielte sie für einen Dateinamen und der Neustart fiele stillschweigend aus.
-		if (!value.matches("(?i)[a-z][a-z0-9+.-]*://.+")) {
+		// Just an id without a scheme is the most common mistake: the OS would take it for a
+		// file name, and the restart would silently do nothing.
+		if (!value.matches(LINK_PATTERN)) {
 			return List.of(
 					Texts.warn("That is not a link - it needs a scheme, like  name://something"),
 					Texts.dim("LogAI will ignore it and restart the game on its own."));

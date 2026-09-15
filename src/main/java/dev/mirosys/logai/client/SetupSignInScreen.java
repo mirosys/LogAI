@@ -6,16 +6,16 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
-import dev.mirosys.logai.watchdog.CrashDialog;
+import dev.mirosys.logai.watchdog.UriOpener;
 
 /**
- * Schritt 2: darauf bestehen, dass der Nutzer angemeldet ist.
+ * Step 2: insist that the user is signed in.
  *
- * <p>Wer im Absturz-Moment auf einer Anmeldeseite landet, hat vom Mod nichts - deshalb
- * ist dieser Schritt eine bewusste Entscheidung und kein beiläufiger Hinweis.
+ * <p>Landing on a login page at the moment of a crash makes the whole mod pointless, so
+ * this is a deliberate choice, not a passing hint.
  */
 public class SetupSignInScreen extends SetupScreen {
-	/** Ob die Anmeldeseite bereits geöffnet wurde. Danach ändert sich die Auswahl. */
+	/** Once the login page has been opened, the choices change. */
 	private boolean openedLoginPage;
 
 	public SetupSignInScreen(Screen parent) {
@@ -28,14 +28,14 @@ public class SetupSignInScreen extends SetupScreen {
 
 		if (this.openedLoginPage) {
 			return List.of(
-					Texts.accent(ai + " should now be open in your browser."),
+					Texts.emphasis(ai + " should now be open in your browser."),
 					Texts.blank(),
 					Texts.dim("Sign in there, then come back and finish the setup."),
 					Texts.dim("You will not be asked again until the next update."));
 		}
 
 		return List.of(
-				Texts.term("You picked ", "").append(Texts.accent(ai)),
+				Texts.dim("You picked ").append(Texts.emphasis(ai)),
 				Texts.blank(),
 				Texts.warn("LogAI is useless in the moment it matters if you are not signed in."),
 				Texts.dim("The crash would send you to a login page instead of an answer."),
@@ -45,42 +45,42 @@ public class SetupSignInScreen extends SetupScreen {
 
 	@Override
 	protected void init() {
-		int centerX = this.width / 2;
+		int left = this.width / 2 - 130;
 		int top = this.buttonTop();
 
 		if (this.openedLoginPage) {
 			this.addRenderableWidget(Button
 					.builder(Component.literal("Open it again"),
-							button -> CrashDialog.openUri(this.config.provider().loginUrl()))
-					.bounds(centerX - 130, top, 260, 20)
+							button -> UriOpener.open(this.config.provider().loginUrl()))
+					.bounds(left, top, 260, 20)
 					.build());
 
 			this.addRenderableWidget(Button
 					.builder(Component.literal("Done, I am signed in"), button -> this.next())
-					.bounds(centerX - 130, top + 30, 260, 20)
+					.bounds(left, top + 30, 260, 20)
 					.build());
 			return;
 		}
 
 		this.addRenderableWidget(Button
 				.builder(Component.literal("No, let me sign in"), button -> {
-					CrashDialog.openUri(this.config.provider().loginUrl());
+					UriOpener.open(this.config.provider().loginUrl());
 					this.openedLoginPage = true;
 					this.rebuildWidgets();
 				})
-				.bounds(centerX - 130, top, 260, 20)
+				.bounds(left, top, 260, 20)
 				.build());
 
 		this.addRenderableWidget(Button
 				.builder(Component.literal("Yes, I am already signed in (not recommended)"),
 						button -> this.next())
-				.bounds(centerX - 130, top + 24, 260, 20)
+				.bounds(left, top + 24, 260, 20)
 				.build());
 
 		this.addRenderableWidget(Button
 				.builder(Component.literal("Back"),
 						button -> this.minecraft.setScreenAndShow(SetupIntroScreen.create(this.parent)))
-				.bounds(centerX - 130, top + 54, 260, 20)
+				.bounds(left, top + 54, 260, 20)
 				.build());
 	}
 
@@ -91,7 +91,7 @@ public class SetupSignInScreen extends SetupScreen {
 
 	@Override
 	public void onClose() {
-		// Wegklicken zaehlt nicht als erledigt, beim naechsten Start kommt die Frage wieder.
+		// Closing does not count as done; the question comes back on the next start.
 		this.config.save();
 		this.minecraft.setScreenAndShow(this.parent);
 	}

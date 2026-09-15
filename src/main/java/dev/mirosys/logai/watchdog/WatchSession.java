@@ -11,99 +11,111 @@ import java.util.Properties;
 import dev.mirosys.logai.config.AiProvider;
 
 /**
- * Die Datenübergabe vom Mod an den Watcher-Prozess.
+ * Everything the watcher process needs to know, handed over as a file.
  *
- * <p>Bewusst eine schlichte {@link Properties}-Datei statt JSON: der Watcher läuft
- * mit dem Mod-Jar als einzigem Classpath und hat damit weder Gson noch sonst eine
- * Bibliothek zur Verfügung.
+ * <p>A plain {@link Properties} file rather than JSON on purpose: the watcher runs with
+ * the mod jar as its only classpath, so there is no Gson or anything else to lean on.
  */
 public final class WatchSession {
 	public long pid;
 	public Path gameDir;
 	public Path logFile;
+	/** Written by the mod on an orderly shutdown; its content says how the game ended. */
 	public Path markerFile;
-	/** Wird vom Testknopf angelegt, damit der Bericht nicht als echter Absturz gelesen wird. */
+	/** Written by the test button so the report is not read as a real crash. */
 	public Path testMarkerFile;
+	/** The recorded command line for restarting. Contains the access token. */
+	public Path restartCommandFile;
 	public Path reportDir;
+
 	public AiProvider provider = AiProvider.CLAUDE;
 	public boolean autoOpen;
-	/** Nach dem Absturz ungefragt neu starten. */
 	public boolean autoRestart;
-	/** Experimentell: Startlink des Launchers, leer heisst selbst starten. */
+	/** Experimental: a launcher link to restart through; empty means restart directly. */
 	public String launchLink = "";
-	/** Welche Arten des Beendens gemeldet werden sollen. */
+
 	public boolean triggerOnCrash = true;
 	public boolean triggerOnAltF4 = true;
 	public boolean triggerOnWindowClose = true;
 	public boolean triggerOnQuit;
-	/** Datei mit der Startzeile des Spiels. Enthaelt den Access-Token. */
-	public Path restartCommandFile;
+
 	public String launcher = "unknown launcher";
 	public String minecraftVersion = "unknown";
 	public String loaderVersion = "unknown";
 	public String modVersion = "unknown";
-	/** Zeitpunkt des Spielstarts in Millisekunden, um alte hs_err-Dateien zu ignorieren. */
+	/** Game start time in millis, used to ignore hs_err files from earlier sessions. */
 	public long startedAt;
 
 	public void write(Path file) throws IOException {
-		Properties properties = new Properties();
-		properties.setProperty("pid", Long.toString(pid));
-		properties.setProperty("gameDir", gameDir.toAbsolutePath().toString());
-		properties.setProperty("logFile", logFile.toAbsolutePath().toString());
-		properties.setProperty("markerFile", markerFile.toAbsolutePath().toString());
-		properties.setProperty("testMarkerFile", testMarkerFile.toAbsolutePath().toString());
-		properties.setProperty("reportDir", reportDir.toAbsolutePath().toString());
-		properties.setProperty("provider", provider.name());
-		properties.setProperty("autoOpen", Boolean.toString(autoOpen));
-		properties.setProperty("autoRestart", Boolean.toString(autoRestart));
-		properties.setProperty("launchLink", launchLink == null ? "" : launchLink);
-		properties.setProperty("triggerOnCrash", Boolean.toString(triggerOnCrash));
-		properties.setProperty("triggerOnAltF4", Boolean.toString(triggerOnAltF4));
-		properties.setProperty("triggerOnWindowClose", Boolean.toString(triggerOnWindowClose));
-		properties.setProperty("triggerOnQuit", Boolean.toString(triggerOnQuit));
-		properties.setProperty("restartCommandFile", restartCommandFile.toAbsolutePath().toString());
-		properties.setProperty("launcher", launcher);
-		properties.setProperty("minecraftVersion", minecraftVersion);
-		properties.setProperty("loaderVersion", loaderVersion);
-		properties.setProperty("modVersion", modVersion);
-		properties.setProperty("startedAt", Long.toString(startedAt));
+		Properties p = new Properties();
+		p.setProperty("pid", Long.toString(pid));
+		p.setProperty("gameDir", absolute(gameDir));
+		p.setProperty("logFile", absolute(logFile));
+		p.setProperty("markerFile", absolute(markerFile));
+		p.setProperty("testMarkerFile", absolute(testMarkerFile));
+		p.setProperty("restartCommandFile", absolute(restartCommandFile));
+		p.setProperty("reportDir", absolute(reportDir));
+		p.setProperty("provider", provider.name());
+		p.setProperty("autoOpen", Boolean.toString(autoOpen));
+		p.setProperty("autoRestart", Boolean.toString(autoRestart));
+		p.setProperty("launchLink", launchLink == null ? "" : launchLink);
+		p.setProperty("triggerOnCrash", Boolean.toString(triggerOnCrash));
+		p.setProperty("triggerOnAltF4", Boolean.toString(triggerOnAltF4));
+		p.setProperty("triggerOnWindowClose", Boolean.toString(triggerOnWindowClose));
+		p.setProperty("triggerOnQuit", Boolean.toString(triggerOnQuit));
+		p.setProperty("launcher", launcher);
+		p.setProperty("minecraftVersion", minecraftVersion);
+		p.setProperty("loaderVersion", loaderVersion);
+		p.setProperty("modVersion", modVersion);
+		p.setProperty("startedAt", Long.toString(startedAt));
 
 		Files.createDirectories(file.getParent());
 
 		try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
-			properties.store(writer, "LogAI watch session - wird nach dem Spielende automatisch entfernt");
+			p.store(writer, "LogAI watch session - removed automatically when the game ends");
 		}
 	}
 
 	public static WatchSession read(Path file) throws IOException {
-		Properties properties = new Properties();
+		Properties p = new Properties();
 
 		try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-			properties.load(reader);
+			p.load(reader);
 		}
 
-		WatchSession session = new WatchSession();
-		session.pid = Long.parseLong(properties.getProperty("pid", "-1"));
-		session.gameDir = Path.of(properties.getProperty("gameDir", "."));
-		session.logFile = Path.of(properties.getProperty("logFile", "."));
-		session.markerFile = Path.of(properties.getProperty("markerFile", "."));
-		session.testMarkerFile = Path.of(properties.getProperty("testMarkerFile", "."));
-		session.reportDir = Path.of(properties.getProperty("reportDir", "."));
-		session.provider = AiProvider.byName(properties.getProperty("provider"), AiProvider.CLAUDE);
-		session.autoOpen = Boolean.parseBoolean(properties.getProperty("autoOpen", "false"));
-		session.autoRestart = Boolean.parseBoolean(properties.getProperty("autoRestart", "false"));
-		session.launchLink = properties.getProperty("launchLink", "");
-		session.triggerOnCrash = Boolean.parseBoolean(properties.getProperty("triggerOnCrash", "true"));
-		session.triggerOnAltF4 = Boolean.parseBoolean(properties.getProperty("triggerOnAltF4", "true"));
-		session.triggerOnWindowClose =
-				Boolean.parseBoolean(properties.getProperty("triggerOnWindowClose", "true"));
-		session.triggerOnQuit = Boolean.parseBoolean(properties.getProperty("triggerOnQuit", "false"));
-		session.restartCommandFile = Path.of(properties.getProperty("restartCommandFile", "."));
-		session.launcher = properties.getProperty("launcher", "unknown launcher");
-		session.minecraftVersion = properties.getProperty("minecraftVersion", "unknown");
-		session.loaderVersion = properties.getProperty("loaderVersion", "unknown");
-		session.modVersion = properties.getProperty("modVersion", "unknown");
-		session.startedAt = Long.parseLong(properties.getProperty("startedAt", "0"));
-		return session;
+		WatchSession s = new WatchSession();
+		s.pid = Long.parseLong(p.getProperty("pid", "-1"));
+		s.gameDir = path(p, "gameDir");
+		s.logFile = path(p, "logFile");
+		s.markerFile = path(p, "markerFile");
+		s.testMarkerFile = path(p, "testMarkerFile");
+		s.restartCommandFile = path(p, "restartCommandFile");
+		s.reportDir = path(p, "reportDir");
+		s.provider = AiProvider.byName(p.getProperty("provider"), AiProvider.CLAUDE);
+		s.autoOpen = flag(p, "autoOpen", false);
+		s.autoRestart = flag(p, "autoRestart", false);
+		s.launchLink = p.getProperty("launchLink", "");
+		s.triggerOnCrash = flag(p, "triggerOnCrash", true);
+		s.triggerOnAltF4 = flag(p, "triggerOnAltF4", true);
+		s.triggerOnWindowClose = flag(p, "triggerOnWindowClose", true);
+		s.triggerOnQuit = flag(p, "triggerOnQuit", false);
+		s.launcher = p.getProperty("launcher", "unknown launcher");
+		s.minecraftVersion = p.getProperty("minecraftVersion", "unknown");
+		s.loaderVersion = p.getProperty("loaderVersion", "unknown");
+		s.modVersion = p.getProperty("modVersion", "unknown");
+		s.startedAt = Long.parseLong(p.getProperty("startedAt", "0"));
+		return s;
+	}
+
+	private static String absolute(Path path) {
+		return path.toAbsolutePath().toString();
+	}
+
+	private static Path path(Properties p, String key) {
+		return Path.of(p.getProperty(key, "."));
+	}
+
+	private static boolean flag(Properties p, String key, boolean fallback) {
+		return Boolean.parseBoolean(p.getProperty(key, Boolean.toString(fallback)));
 	}
 }

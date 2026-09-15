@@ -5,45 +5,39 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 
 /**
- * Kleine Helfer für den Fließtext der Bildschirme.
- *
- * <p>Minecraft kann Text nicht umbrechen lassen und nicht fett und normal in einem
- * Aufruf mischen, ohne dass es umständlich wird - das hier nimmt die Umständlichkeit ab.
+ * Small helpers for the screen text, using only the colours Minecraft's own menus use:
+ * white for what matters, grey for the rest, yellow for the occasional hint.
  */
 public final class Texts {
 	private Texts() {
 	}
 
-	public static Component line(String text) {
-		return Component.literal(text);
-	}
-
-	/** Leerzeile. */
 	public static Component blank() {
 		return Component.empty();
 	}
 
-	/** Hervorgehobener Anfang, normaler Rest - etwa "Crash - the game died on its own." */
-	public static MutableComponent term(String highlighted, String rest) {
-		return Component.literal(highlighted).withStyle(ChatFormatting.WHITE)
-				.append(Component.literal(rest).withStyle(ChatFormatting.GRAY));
+	/** Plain explanatory text. */
+	public static MutableComponent dim(String text) {
+		return Component.literal(text).withStyle(ChatFormatting.GRAY);
 	}
 
-	public static MutableComponent accent(String text) {
-		return Component.literal(text).withStyle(ChatFormatting.AQUA);
+	/** Something the reader should not skim past. */
+	public static MutableComponent emphasis(String text) {
+		return Component.literal(text).withStyle(ChatFormatting.WHITE);
 	}
 
+	/** A hint or a warning, in the yellow Minecraft itself uses for those. */
 	public static MutableComponent warn(String text) {
 		return Component.literal(text).withStyle(ChatFormatting.YELLOW);
 	}
 
-	/** Der Titel der Einrichtungs-Bildschirme: Name kraeftig, Signatur dezent. */
-	public static MutableComponent brand() {
-		return Component.literal("LogAI").withStyle(ChatFormatting.WHITE)
-				.append(Component.literal(" - by mirosys").withStyle(ChatFormatting.GRAY));
+	/** A white term followed by its grey explanation, like "Crash - the game died". */
+	public static MutableComponent term(String highlighted, String rest) {
+		return emphasis(highlighted).append(dim(rest));
 	}
 
-	public static MutableComponent dim(String text) {
-		return Component.literal(text).withStyle(ChatFormatting.GRAY);
+	/** The setup title: the name in white, the credit in grey. */
+	public static MutableComponent brand() {
+		return emphasis("LogAI").append(dim(" - by mirosys"));
 	}
 }

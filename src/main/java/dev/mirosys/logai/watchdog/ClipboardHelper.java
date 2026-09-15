@@ -13,34 +13,33 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 /**
- * Legt den Bericht als <em>Datei</em> in die Zwischenablage, sodass ein einzelnes Strg+V
- * im Chat einen Datei-Anhang erzeugt.
+ * Puts the report on the clipboard as a <em>file</em>, so a single Ctrl+V in a chat
+ * attaches it instead of pasting a wall of text.
  *
- * <p>Wichtig: unter Linux gehört der Zwischenablage-Inhalt dem besitzenden Prozess. Der
- * Watcher darf deshalb erst beendet werden, wenn der Nutzer das Fenster schließt.
+ * <p>On Linux the clipboard content belongs to the process that set it, so this process
+ * must stay alive until someone has taken it. See {@link #holdWhileNeeded()}.
  */
 public final class ClipboardHelper implements ClipboardOwner {
-	/** Zählt herunter, sobald ein anderes Programm die Zwischenablage übernimmt. */
-	private static final java.util.concurrent.CountDownLatch TAKEN =
-			new java.util.concurrent.CountDownLatch(1);
+	/** Counts down as soon as another program takes over the clipboard. */
+	private static final CountDownLatch TAKEN = new CountDownLatch(1);
 
-	/** Wie lange der Watcher unter Linux still im Hintergrund wartet. */
+	/** How long the watcher waits in the background on Linux before giving up. */
 	private static final long HOLD_MINUTES = 10;
 
 	private ClipboardHelper() {
 	}
 
 	/**
-	 * @return {@code true}, wenn die Datei selbst kopiert werden konnte, {@code false},
-	 *         wenn auf reinen Text ausgewichen wurde.
+	 * @return {@code true} if the file itself was copied, {@code false} if we had to fall
+	 *         back to plain text
 	 */
 	public static boolean copyAsFile(Path report) {
-		Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-
 		try {
-			clipboard.setContents(new FileTransferable(report.toFile()), new ClipboardHelper());
+			clipboard().setContents(new FileTransferable(report.toFile()), new ClipboardHelper());
 			return true;
 		} catch (RuntimeException e) {
 			return copyAsText(report);
@@ -49,42 +48,43 @@ public final class ClipboardHelper implements ClipboardOwner {
 
 	public static boolean copyAsText(Path report) {
 		try {
-			String content = new String(Files.readAllBytes(report), StandardCharsets.UTF_8);
-			Toolkit.getDefaultToolkit().getSystemClipboard()
-					.setContents(new StringSelection(content), new ClipboardHelper());
-			return false;
-		} catch (IOException | RuntimeException e) {
-			return false;
+			String content = Files.readString(report, StandardCharsets.UTF_8);
+			clipboard().setContents(new StringSelection(content), new ClipboardHelper());
+		} catch (IOException | RuntimeException ignored) {
+			// Nothing more to try.
 		}
+
+		return false;
 	}
 
 	@Override
 	public void lostOwnership(Clipboard clipboard, Transferable contents) {
-		// Etwas anderes wurde kopiert - oder der Nutzer hat eingefügt und der Inhalt ist
-		// angekommen. Ab hier muss dieser Prozess nichts mehr festhalten.
+		// Something else was copied, or the paste went through. Either way this process
+		// no longer needs to hold anything.
 		TAKEN.countDown();
 	}
 
 	/**
-	 * Hält den Prozess am Leben, solange die Zwischenablage ihn dafür braucht.
+	 * Keeps the process alive for as long as the clipboard needs it.
 	 *
-	 * <p>Unter Linux gehört der Inhalt dem Prozess, der ihn hineingelegt hat: endet er,
-	 * ist die Zwischenablage leer. Wenn kein Fenster offen bleibt, muss der Watcher
-	 * deshalb still im Hintergrund warten. Windows und macOS legen den Inhalt selbst ab
-	 * und brauchen das nicht.
+	 * <p>Windows and macOS store the content themselves; there is nothing to wait for.
+	 * On Linux the content dies with the owning process, so when no dialog stays open the
+	 * watcher has to wait quietly in the background instead.
 	 */
 	public static void holdWhileNeeded() {
-		String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
-
-		if (os.contains("win") || os.contains("mac")) {
+		if (Os.current() != Os.LINUX) {
 			return;
 		}
 
 		try {
-			TAKEN.await(HOLD_MINUTES, java.util.concurrent.TimeUnit.MINUTES);
+			TAKEN.await(HOLD_MINUTES, TimeUnit.MINUTES);
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 		}
+	}
+
+	private static Clipboard clipboard() {
+		return Toolkit.getDefaultToolkit().getSystemClipboard();
 	}
 
 	private record FileTransferable(File file) implements Transferable {

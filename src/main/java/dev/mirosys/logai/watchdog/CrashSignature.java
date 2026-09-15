@@ -7,11 +7,11 @@ import java.nio.file.Path;
 import java.util.List;
 
 /**
- * Zweite Meinung zur Marker-Datei.
+ * A second opinion next to the marker file.
  *
- * <p>Die Marker-Datei allein würde daneben liegen, falls Minecraft beim Absturz doch noch
- * ordentlich herunterfährt. Deshalb bekommt das Log-Ende zusätzlich einen Blick: findet
- * sich dort eine dieser sehr eindeutigen Zeilen, war es ein Absturz - Marker hin oder her.
+ * <p>The marker alone would be wrong if Minecraft manages an orderly shutdown while
+ * crashing. So the end of the log gets a look too: if one of these very specific lines is
+ * in there, it was a crash, marker or not.
  */
 public final class CrashSignature {
 	private static final List<String> MARKERS = List.of(
@@ -33,16 +33,9 @@ public final class CrashSignature {
 
 		try {
 			String content = new String(Files.readAllBytes(logFile), StandardCharsets.UTF_8);
-
-			for (String marker : MARKERS) {
-				if (content.contains(marker)) {
-					return true;
-				}
-			}
+			return MARKERS.stream().anyMatch(content::contains);
 		} catch (IOException | OutOfMemoryError e) {
 			return false;
 		}
-
-		return false;
 	}
 }

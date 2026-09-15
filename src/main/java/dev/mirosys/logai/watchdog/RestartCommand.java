@@ -1,32 +1,39 @@
 package dev.mirosys.logai.watchdog;
 
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
- * Die Startzeile des laufenden Minecraft, damit der Watcher das Spiel neu starten kann.
+ * The command line Minecraft was started with, recorded so the watcher can start it again.
  *
- * <p>Der Watcher kann sie nicht selbst ermitteln: nach dem Tod des Prozesses ist die
- * Kommandozeile weg. Also merkt der Mod sie sich beim Start.
+ * <p>The watcher cannot find it out on its own: once the process is dead, its command line
+ * is gone. So the mod records it at startup.
  *
- * <p>Achtung: diese Zeile enthält den Minecraft-Access-Token. Die Datei wird deshalb
- * getrennt von allem anderen abgelegt und bei der ersten Gelegenheit wieder gelöscht.
+ * <p>Note that this line contains the Minecraft access token. The file is kept apart from
+ * everything else and deleted at the first opportunity.
  */
 public final class RestartCommand {
+	/** Arguments whose values must never end up in a log. */
+	private static final Set<String> SECRET_OPTIONS =
+			Set.of("--accesstoken", "--session", "--xuid", "--uuid");
+
 	private RestartCommand() {
 	}
 
 	/**
-	 * Setzt die Startzeile aus dem zusammen, was die laufende JVM über sich weiß, und legt
-	 * sie ab. Wird im Minecraft-Prozess aufgerufen.
+	 * Works out the standalone command line for the current process and writes it to
+	 * {@code file}. Called from inside Minecraft.
 	 */
 	public static void capture(Path file) throws IOException {
-		// Zuerst das Betriebssystem fragen: nur dort stehen die Argumentgrenzen noch so,
-		// wie der Launcher sie gesetzt hat.
+		// Ask the OS first: only there are the argument boundaries still the way the
+		// launcher set them.
 		List<String> command = NativeCommandLine.current();
 
 		if (command.isEmpty()) {
@@ -41,40 +48,9 @@ public final class RestartCommand {
 		}
 
 		Files.createDirectories(file.getParent());
-		// Eine Zeile pro Argument: Argumente enthalten Leerzeichen, Zeilenumbrüche nie.
+		// One argument per line: arguments may contain spaces, but never line breaks.
 		Files.write(file, standalone, StandardCharsets.UTF_8);
 		restrictToOwner(file);
-	}
-
-	/**
-	 * Notnagel, wenn das Betriebssystem nichts herausgibt: aus dem zusammensetzen, was die
-	 * JVM über sich selbst weiß. Ungenau, weil {@code sun.java.command} die
-	 * Anführungszeichen bereits verloren hat - Pfade mit Leerzeichen zerfallen dabei.
-	 */
-	private static List<String> reconstruct() throws IOException {
-		List<String> command = new ArrayList<>();
-		command.add(ProcessHandle.current().info().command()
-				.orElse(Path.of(System.getProperty("java.home"), "bin", "java").toString()));
-
-		// -Xmx, --add-opens und was der Launcher sonst noch mitgibt.
-		command.addAll(java.lang.management.ManagementFactory.getRuntimeMXBean().getInputArguments());
-
-		String classPath = System.getProperty("java.class.path", "");
-
-		if (!classPath.isBlank()) {
-			command.add("-cp");
-			command.add(classPath);
-		}
-
-		// Hauptklasse samt Spielargumenten, inklusive Access-Token.
-		String mainCommand = System.getProperty("sun.java.command", "");
-
-		if (mainCommand.isBlank()) {
-			throw new IOException("this JVM does not expose sun.java.command, cannot restart");
-		}
-
-		command.addAll(splitArguments(mainCommand));
-		return command;
 	}
 
 	public static List<String> read(Path file) throws IOException {
@@ -84,11 +60,11 @@ public final class RestartCommand {
 	}
 
 	/**
-	 * Startet das Spiel neu. Der neue Prozess hängt an keinem Launcher mehr, läuft also
-	 * eigenständig weiter.
+	 * Starts the game again. The new process is not attached to any launcher and runs on
+	 * its own.
 	 *
-	 * <p>Die Ausgabe landet in einer Datei statt im Nichts: stirbt der neue Prozess sofort,
-	 * ist das der einzige Ort, an dem der Grund noch steht.
+	 * <p>Its output goes to a file rather than nowhere: if the new process dies at once,
+	 * that file is the only place the reason survives.
 	 */
 	public static void restart(List<String> command, Path workingDirectory, Path logFile)
 			throws IOException {
@@ -103,31 +79,56 @@ public final class RestartCommand {
 	}
 
 	/**
-	 * Die Startzeile fürs Log, ohne den Access-Token. Der gehört in keine Datei, die
-	 * jemand später harmlos weiterreicht.
+	 * Fallback when the OS gives nothing back: assemble the line from what the JVM knows
+	 * about itself. Lossy, because {@code sun.java.command} has already dropped the
+	 * quoting - paths with spaces fall apart.
 	 */
+	private static List<String> reconstruct() throws IOException {
+		List<String> command = new ArrayList<>();
+		command.add(ProcessHandle.current().info().command()
+				.orElse(Path.of(System.getProperty("java.home"), "bin", "java").toString()));
+
+		// -Xmx, --add-opens and whatever else the launcher passed.
+		command.addAll(ManagementFactory.getRuntimeMXBean().getInputArguments());
+
+		String classPath = System.getProperty("java.class.path", "");
+
+		if (!classPath.isBlank()) {
+			command.add("-cp");
+			command.add(classPath);
+		}
+
+		// Main class plus game arguments, access token included.
+		String mainCommand = System.getProperty("sun.java.command", "");
+
+		if (mainCommand.isBlank()) {
+			throw new IOException("this JVM does not expose sun.java.command, cannot restart");
+		}
+
+		command.addAll(splitArguments(mainCommand));
+		return command;
+	}
+
+	/** The command line for the log, with secrets blanked out. */
 	private static String redacted(List<String> command) {
 		StringBuilder out = new StringBuilder();
 		boolean hideNext = false;
 
 		for (String part : command) {
-			if (hideNext) {
-				out.append(" <hidden>");
-				hideNext = false;
-				continue;
+			if (!out.isEmpty()) {
+				out.append(' ');
 			}
 
-			hideNext = part.equalsIgnoreCase("--accessToken") || part.equalsIgnoreCase("--session")
-					|| part.equalsIgnoreCase("--xuid") || part.equalsIgnoreCase("--uuid");
-			out.append(out.isEmpty() ? "" : " ").append(part);
+			out.append(hideNext ? "<hidden>" : part);
+			hideNext = SECRET_OPTIONS.contains(part.toLowerCase());
 		}
 
 		return out.toString();
 	}
 
 	/**
-	 * {@code sun.java.command} ist eine einzelne Zeichenkette. Argumente mit Leerzeichen
-	 * sind darin in Anführungszeichen gesetzt.
+	 * {@code sun.java.command} is a single string; arguments containing spaces are
+	 * wrapped in quotes there.
 	 */
 	private static List<String> splitArguments(String line) {
 		List<String> parts = new ArrayList<>();
@@ -156,14 +157,13 @@ public final class RestartCommand {
 		return parts;
 	}
 
-	/** Best effort: auf Dateisystemen mit Rechten nur für den Besitzer lesbar machen. */
+	/** Best effort: owner-only on file systems that support POSIX permissions. */
 	private static void restrictToOwner(Path file) {
 		try {
 			Files.setPosixFilePermissions(file,
-					java.util.Set.of(java.nio.file.attribute.PosixFilePermission.OWNER_READ,
-							java.nio.file.attribute.PosixFilePermission.OWNER_WRITE));
+					Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
 		} catch (Exception ignored) {
-			// Windows kennt keine POSIX-Rechte, dort bleibt es bei den Ordner-Rechten.
+			// Windows has no POSIX permissions; the folder's ACL applies instead.
 		}
 	}
 }

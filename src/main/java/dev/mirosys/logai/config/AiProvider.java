@@ -1,10 +1,10 @@
 package dev.mirosys.logai.config;
 
 /**
- * Die auswählbaren KI-Anbieter.
+ * The AI services the user can pick from.
  *
- * <p>Diese Klasse wird auch vom Watcher-Prozess geladen und darf deshalb weder
- * Minecraft- noch sonstige Fremdklassen referenzieren.
+ * <p>The watcher process loads this class too, so it must not reference Minecraft or any
+ * other library.
  */
 public enum AiProvider {
 	CLAUDE("Claude", "https://claude.ai/new", "https://claude.ai/login"),
@@ -27,15 +27,12 @@ public enum AiProvider {
 		return displayName;
 	}
 
-	/** Startet einen frischen Chat, keine bestimmte Konversation. */
+	/** Opens a fresh chat, not any particular conversation. */
 	public String newChatUrl() {
 		return newChatUrl;
 	}
 
-	/**
-	 * Die Anmeldeseite. Manche Anbieter haben keine eigene, dort führt der Chat selbst
-	 * zur Anmeldung.
-	 */
+	/** The sign-in page. Some services have none; there the chat itself prompts. */
 	public String loginUrl() {
 		return loginUrl;
 	}

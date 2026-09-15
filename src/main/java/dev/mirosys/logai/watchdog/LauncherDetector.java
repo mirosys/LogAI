@@ -1,13 +1,33 @@
 package dev.mirosys.logai.watchdog;
 
+import java.io.File;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Locale;
 
 /**
- * Rät anhand des Spielordner-Pfads, über welchen Launcher gestartet wurde.
- * Diese Zeile landet im Prompt, damit die KI den Kontext kennt.
+ * Guesses the launcher from the game directory path. The result ends up in the prompt so
+ * the AI knows the context.
  */
 public final class LauncherDetector {
+	/** Path fragment (lower case, forward slashes) and the launcher it points to. */
+	private record Hint(String fragment, String launcher) {
+	}
+
+	private static final List<Hint> HINTS = List.of(
+			new Hint("/modrinthapp/", "Modrinth App launcher"),
+			new Hint("/com.modrinth.theseus/", "Modrinth App launcher"),
+			new Hint("/prismlauncher/", "Prism Launcher"),
+			new Hint("/prisminstances/", "Prism Launcher"),
+			new Hint("/polymc/", "PolyMC"),
+			new Hint("/multimc/", "MultiMC"),
+			new Hint("/curseforge/", "CurseForge App launcher"),
+			new Hint("/overwolf/", "CurseForge App launcher"),
+			new Hint("/atlauncher/", "ATLauncher"),
+			new Hint("/gdlauncher", "GDLauncher"),
+			new Hint("/technic/", "Technic Launcher"),
+			new Hint("/.minecraft", "official Minecraft launcher"));
+
 	private LauncherDetector() {
 	}
 
@@ -17,37 +37,13 @@ public final class LauncherDetector {
 		}
 
 		String path = gameDir.toAbsolutePath().toString()
-				.replace(java.io.File.separatorChar, '/')
+				.replace(File.separatorChar, '/')
 				.toLowerCase(Locale.ROOT);
 
-		if (path.contains("/modrinthapp/") || path.contains("/com.modrinth.theseus/")) {
-			return "Modrinth App launcher";
-		}
-		if (path.contains("/prismlauncher/") || path.contains("/prisminstances/")) {
-			return "Prism Launcher";
-		}
-		if (path.contains("/polymc/")) {
-			return "PolyMC";
-		}
-		if (path.contains("/multimc/")) {
-			return "MultiMC";
-		}
-		if (path.contains("/curseforge/") || path.contains("/overwolf/")) {
-			return "CurseForge App launcher";
-		}
-		if (path.contains("/atlauncher/")) {
-			return "ATLauncher";
-		}
-		if (path.contains("/gdlauncher")) {
-			return "GDLauncher";
-		}
-		if (path.contains("/technic/")) {
-			return "Technic Launcher";
-		}
-		if (path.endsWith("/.minecraft") || path.contains("/.minecraft/")) {
-			return "official Minecraft launcher";
-		}
-
-		return "unknown launcher";
+		return HINTS.stream()
+				.filter(hint -> path.contains(hint.fragment()))
+				.map(Hint::launcher)
+				.findFirst()
+				.orElse("unknown launcher");
 	}
 }

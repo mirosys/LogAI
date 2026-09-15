@@ -7,44 +7,36 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Fragt beim Betriebssystem nach der echten Startzeile des eigenen Prozesses.
+ * Asks the operating system for the real command line of the current process.
  *
- * <p>Java selbst gibt sie nicht heraus: {@code sun.java.command} enthält die Argumente
- * schon zusammengefügt, die Anführungszeichen sind darin verloren. Ein Pfad wie
- * {@code --gameDir "…\main 1.0.0"} lässt sich daraus nicht mehr korrekt zerlegen. Das
- * Betriebssystem kennt dagegen die ursprünglichen Argumentgrenzen.
+ * <p>Java itself will not hand it over: {@code sun.java.command} has the arguments
+ * already joined with spaces and the quotes gone, so {@code --gameDir "…\main 1.0.0"}
+ * cannot be split back correctly. The OS still knows where each argument began and ended.
  */
 public final class NativeCommandLine {
 	private NativeCommandLine() {
 	}
 
 	/**
-	 * @return die Argumente des eigenen Prozesses, oder eine leere Liste, wenn dieses
-	 *         System das nicht hergibt.
+	 * @return the arguments of the current process, or an empty list if this system does
+	 *         not give them out
 	 */
 	public static List<String> current() {
-		String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-
 		try {
-			if (os.contains("win")) {
-				return fromWindows();
-			}
-
-			if (os.contains("mac")) {
-				return fromMac();
-			}
-
-			return fromProc();
+			return switch (Os.current()) {
+				case WINDOWS -> fromWindows();
+				case MAC -> fromMac();
+				case LINUX -> fromProc();
+			};
 		} catch (Exception e) {
 			return List.of();
 		}
 	}
 
-	/** Linux: exakt und ohne Umwege, die Argumente sind mit Nullbytes getrennt. */
+	/** Linux: exact and cheap, the arguments are separated by NUL bytes. */
 	private static List<String> fromProc() throws IOException {
 		Path cmdline = Path.of("/proc/self/cmdline");
 
@@ -65,8 +57,8 @@ public final class NativeCommandLine {
 	}
 
 	/**
-	 * Windows: die Kommandozeile steht in der Prozessliste, abrufbar über WMI. Sie kommt
-	 * als eine Zeichenkette zurück, in der die Anführungszeichen noch stehen.
+	 * Windows: the command line is in the process list, reachable through WMI. It comes
+	 * back as a single string with the quotes still in place.
 	 */
 	private static List<String> fromWindows() throws IOException, InterruptedException {
 		long pid = ProcessHandle.current().pid();
@@ -78,25 +70,17 @@ public final class NativeCommandLine {
 	}
 
 	/**
-	 * macOS: {@code ps} fügt die Argumente mit Leerzeichen zusammen, die ursprünglichen
-	 * Grenzen sind damit verloren. Nur brauchbar, solange keine Leerzeichen vorkommen.
+	 * macOS: {@code ps} joins the arguments with spaces, so the original boundaries are
+	 * lost. Only good enough while no argument contains a space.
 	 */
 	private static List<String> fromMac() throws IOException, InterruptedException {
 		long pid = ProcessHandle.current().pid();
 		String raw = run(List.of("ps", "-ww", "-o", "command=", "-p", Long.toString(pid)));
-
-		if (raw.isBlank()) {
-			return List.of();
-		}
-
-		return List.of(raw.strip().split(" +"));
+		return raw.isBlank() ? List.of() : List.of(raw.strip().split(" +"));
 	}
 
 	private static String run(List<String> command) throws IOException, InterruptedException {
-		ProcessBuilder builder = new ProcessBuilder(command);
-		builder.redirectErrorStream(false);
-		Process process = builder.start();
-
+		Process process = new ProcessBuilder(command).start();
 		String output;
 
 		try (InputStream in = process.getInputStream()) {
@@ -112,9 +96,9 @@ public final class NativeCommandLine {
 	}
 
 	/**
-	 * Zerlegt eine Windows-Kommandozeile in Argumente. Anführungszeichen fassen zusammen,
-	 * ein Backslash ist nur direkt vor einem Anführungszeichen ein Fluchtsymbol - sonst
-	 * wäre kein einziger Windows-Pfad zu gebrauchen.
+	 * Splits a Windows command line into arguments. Quotes group, and a backslash only
+	 * escapes when it sits directly in front of a quote - otherwise no Windows path would
+	 * survive.
 	 */
 	static List<String> splitWindows(String line) {
 		List<String> parts = new ArrayList<>();
@@ -131,8 +115,7 @@ public final class NativeCommandLine {
 			}
 
 			if (c == '"') {
-				// Ein Paar Backslashes steht für einen Backslash, ein einzelner davor
-				// entwertet das Anführungszeichen.
+				// Pairs of backslashes are literal; an odd one escapes the quote.
 				current.append("\\".repeat(backslashes / 2));
 
 				if (backslashes % 2 == 1) {

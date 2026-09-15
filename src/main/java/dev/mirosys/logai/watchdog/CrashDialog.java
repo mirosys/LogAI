@@ -1,18 +1,16 @@
 package dev.mirosys.logai.watchdog;
 
 import java.awt.BorderLayout;
-import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.awt.Frame;
 import java.awt.GraphicsEnvironment;
 import java.awt.Image;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.InputStream;
-import java.net.URI;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
-import java.util.Locale;
 import java.util.concurrent.CountDownLatch;
 
 import javax.imageio.ImageIO;
@@ -30,22 +28,22 @@ import javax.swing.UIManager;
 import javax.swing.WindowConstants;
 
 /**
- * Das Fenster, das nach einem Absturz erscheint. Es bleibt offen, bis der Nutzer es
- * schließt - auf allen Plattformen, damit die Zwischenablage bis dahin gültig bleibt.
+ * The window that appears after the game ended. It stays open until the user closes it -
+ * on all platforms, which is also what keeps the clipboard valid on Linux.
  */
 public final class CrashDialog {
-	/** Sperrfrist gegen versehentliche Tastendruecke direkt nach dem Absturz. */
+	/** Buttons stay disabled this long, so a key still held from the game hits nothing. */
 	private static final int ARM_DELAY_MILLIS = 750;
 
 	static {
-		// Verhindert, dass der Watcher unter macOS ein Dock-Icon mit falschem Namen bekommt.
+		// Otherwise the watcher shows up in the macOS dock under the wrong name.
 		System.setProperty("apple.awt.application.name", "LogAI");
 	}
 
 	private CrashDialog() {
 	}
 
-	/** Was der Nutzer im Fenster angekreuzt hat. */
+	/** What the user ticked in the window. */
 	public record Choice(boolean alwaysAuto, boolean restart) {
 		static final Choice NOTHING = new Choice(false, false);
 	}
@@ -53,7 +51,7 @@ public final class CrashDialog {
 	public static Choice show(WatchSession session, CrashEvidence evidence, Path report,
 			LocalDateTime crashedAt, boolean copiedAsFile, boolean canRestart) {
 		if (GraphicsEnvironment.isHeadless()) {
-			// Ohne Bildschirm gibt es nichts anzuzeigen, der Bericht liegt trotzdem auf der Platte.
+			// No screen, nothing to show. The report is on disk regardless.
 			System.out.println("LogAI: crash report written to " + report);
 			return Choice.NOTHING;
 		}
@@ -63,10 +61,9 @@ public final class CrashDialog {
 
 		SwingUtilities.invokeLater(() -> {
 			try {
-				buildDialog(session, evidence, report, crashedAt, copiedAsFile, canRestart, choice,
-						closed);
+				buildDialog(session, evidence, report, crashedAt, copiedAsFile, canRestart, choice, closed);
 			} catch (Throwable failure) {
-				// Kein Fenster, kein Warten: der Bericht liegt trotzdem auf der Platte.
+				// No window, no waiting: the report is on disk regardless.
 				System.err.println("LogAI: could not show the crash dialog: " + failure);
 				closed.countDown();
 			}
@@ -87,10 +84,10 @@ public final class CrashDialog {
 		applySystemLookAndFeel();
 
 		String ai = session.provider.displayName();
-		String stamp = ReportBuilder.HUMAN_STAMP.format(crashedAt);
+		ShutdownKind kind = evidence.shutdownKind();
 
-		JDialog dialog = new JDialog((java.awt.Frame) null,
-				"LogAI - " + titleWord(evidence.shutdownKind()) + " " + stamp, false);
+		JDialog dialog = new JDialog((Frame) null,
+				"LogAI - " + titleWord(kind) + " " + ReportBuilder.HUMAN_STAMP.format(crashedAt), false);
 		dialog.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
 		dialog.setAlwaysOnTop(true);
 		applyIcon(dialog);
@@ -98,8 +95,8 @@ public final class CrashDialog {
 		JPanel content = new JPanel(new BorderLayout(0, 14));
 		content.setBorder(BorderFactory.createEmptyBorder(18, 20, 14, 20));
 		content.add(new JLabel("<html><body style='width: 380px'>"
-				+ escape(message(ai, evidence.shutdownKind(), copiedAsFile))
-				// Nicht jedes harte Schliessen ist ein Problem - manchmal will man einfach weg.
+				+ escape(message(ai, kind, copiedAsFile))
+				// Not every force-close is a problem; sometimes you just want out.
 				+ "<br><br>" + escape("If you closed the game on purpose and nothing was wrong, "
 						+ "you can simply ignore this window.")
 				+ "<br><br><span style='color:#666'>Saved to " + escape(report.toString())
@@ -113,14 +110,9 @@ public final class CrashDialog {
 		restart.setAlignmentX(JPanel.LEFT_ALIGNMENT);
 
 		if (!canRestart) {
-			// Bei einem Absturz kurz nach dem Start würde ein Neustart nur in einer
-			// Schleife enden, und ohne aufgezeichnete Startzeile geht es ohnehin nicht.
 			restart.setEnabled(false);
 			restart.setText("Restart Minecraft (not available for this session)");
 		}
-
-		JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-		buttons.setAlignmentX(JPanel.LEFT_ALIGNMENT);
 
 		JButton open = new JButton("Open " + ai + " in Browser");
 		JButton copyOnly = new JButton("Copy only");
@@ -132,10 +124,10 @@ public final class CrashDialog {
 		};
 
 		open.addActionListener(event -> {
-			// Erst das Fenster schliessen, dann den Browser rufen: dieses Fenster liegt
-			// immer obenauf und wuerde dem Browser sonst den Fokus wegnehmen.
+			// Close first, then open: this window is always on top and would take the
+			// focus away from the browser otherwise.
 			finish.run();
-			openUri(session.provider.newChatUrl());
+			UriOpener.open(session.provider.newChatUrl());
 		});
 		copyOnly.addActionListener(event -> finish.run());
 		ignore.addActionListener(event -> finish.run());
@@ -144,16 +136,22 @@ public final class CrashDialog {
 			public void windowClosing(WindowEvent event) {
 				finish.run();
 			}
+
+			@Override
+			public void windowClosed(WindowEvent event) {
+				closed.countDown();
+			}
 		});
 
+		JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+		buttons.setAlignmentX(JPanel.LEFT_ALIGNMENT);
 		buttons.add(ignore);
 		buttons.add(copyOnly);
 		buttons.add(open);
 		dialog.getRootPane().setDefaultButton(open);
 
-		// Das Fenster erscheint mitten im Spielen und reisst sich den Fokus. Wer in dem
-		// Moment noch eine Taste gedrueckt haelt, wuerde sonst ungefragt den Standardbutton
-		// ausloesen - also erst nach einer kurzen Schrecksekunde annehmen.
+		// The window pops up mid-game and grabs the focus. A key still held down would
+		// otherwise trigger the default button before anyone has read a word.
 		armAfterDelay(open, copyOnly, ignore);
 
 		JPanel bottom = new JPanel();
@@ -168,12 +166,6 @@ public final class CrashDialog {
 		dialog.pack();
 		dialog.setMinimumSize(new Dimension(dialog.getWidth(), dialog.getHeight()));
 		dialog.setLocationRelativeTo(null);
-		dialog.addWindowListener(new WindowAdapter() {
-			@Override
-			public void windowClosed(WindowEvent event) {
-				closed.countDown();
-			}
-		});
 		dialog.setVisible(true);
 		dialog.toFront();
 	}
@@ -200,26 +192,18 @@ public final class CrashDialog {
 			case QUIT -> "Minecraft was closed normally, nothing went wrong. ";
 		};
 
-		// Bei einem normalen Beenden gibt es keine Ursache zu finden, nur ein Log zu sichten.
-		String job = kind == ShutdownKind.QUIT
-				? "look through the log"
-				: "analyse the cause";
+		// After a normal quit there is no cause to find, just a log to look through.
+		String job = kind == ShutdownKind.QUIT ? "look through the log" : "analyse the cause";
 
-		String middle;
+		String clipboard = copiedAsFile
+				? "The log file is on your clipboard, just paste it into the chat and send as is."
+				: "This system did not allow copying the file itself, so the log was copied as "
+						+ "plain text instead, just paste it into the chat and send as is.";
 
-		if (copiedAsFile) {
-			middle = "Open " + ai + " in your browser and let it " + job + ". The log file is "
-					+ "on your clipboard, just paste it into the chat and send as is.";
-		} else {
-			middle = "Open " + ai + " in your browser and let it " + job + ". This system did "
-					+ "not allow copying the file itself, so the log was copied as plain text "
-					+ "instead, just paste it into the chat and send as is.";
-		}
-
-		return opening + middle;
+		return opening + "Open " + ai + " in your browser and let it " + job + ". " + clipboard;
 	}
 
-	/** Das Wort in der Titelzeile - "crashed" wäre bei drei von vier Fällen gelogen. */
+	/** The word in the title bar; "crashed" would be a lie for three of the four cases. */
 	private static String titleWord(ShutdownKind kind) {
 		return switch (kind) {
 			case CRASH -> "crashed";
@@ -228,54 +212,11 @@ public final class CrashDialog {
 		};
 	}
 
-	/**
-	 * Öffnet eine Adresse mit dem, was das System dafür vorgesehen hat - eine Webseite
-	 * im Browser, ein { launcher://}-Link im zugehörigen Programm.
-	 */
-	public static void openUri(String url) {
-		// Desktop.browse ist ausdrücklich für Webseiten da und gibt alles andere an den
-		// Browser weiter. Ein launcher://-Link landet dann dort statt beim Launcher, und
-		// der Browser fragt bestenfalls nach. Deshalb nur für http und https.
-		if (isWebPage(url)) {
-			try {
-				if (Desktop.isDesktopSupported()
-						&& Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
-					Desktop.getDesktop().browse(URI.create(url));
-					return;
-				}
-			} catch (Exception ignored) {
-				// Fällt unten auf den Weg über die Shell zurück.
-			}
-		}
-
-		String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-
-		try {
-			if (os.contains("win")) {
-				// start reicht die Adresse an das Programm weiter, das für dieses Schema
-				// eingetragen ist. Der leere Titel gehört dazu, sonst nimmt start die
-				// Adresse als Fenstertitel.
-				new ProcessBuilder("cmd.exe", "/c", "start", "", url).start();
-			} else if (os.contains("mac")) {
-				new ProcessBuilder("open", url).start();
-			} else {
-				new ProcessBuilder("xdg-open", url).start();
-			}
-		} catch (Exception ignored) {
-			// Mehr können wir an dieser Stelle nicht tun.
-		}
-	}
-
-	private static boolean isWebPage(String url) {
-		String lower = url.toLowerCase(Locale.ROOT);
-		return lower.startsWith("http://") || lower.startsWith("https://");
-	}
-
 	private static void applySystemLookAndFeel() {
 		try {
 			UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
 		} catch (Exception ignored) {
-			// Dann eben das Standard-Look-and-Feel.
+			// The default look and feel will do.
 		}
 	}
 
@@ -289,7 +230,7 @@ public final class CrashDialog {
 				}
 			}
 		} catch (Exception ignored) {
-			// Ohne Icon sieht das Fenster nur etwas nackter aus.
+			// A window without an icon just looks a little plain.
 		}
 	}
 

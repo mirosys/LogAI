@@ -1,36 +1,26 @@
 package dev.mirosys.logai.watchdog;
 
 /**
- * Wie das Spiel zu Ende gegangen ist.
+ * How the game ended.
  *
- * <p>Der Mod schreibt die Art beim Herunterfahren in die Marker-Datei; fehlt die Datei
- * ganz, hat der Prozess es nicht mehr geschafft, etwas zu schreiben.
+ * <p>The mod writes this into the marker file on shutdown. No marker file at all means
+ * the process never got as far as writing one.
  *
- * <p>Weiter als bis {@link #ALT_F4} lässt sich nicht aufschlüsseln: das X am Fenster und
- * "Task beenden" im Task-Manager senden dieselbe Fenster-Nachricht, die kein Programm
- * unterscheiden kann. Nur Alt+F4 verrät sich vorher über die Tastatur.
+ * <p>This is as fine-grained as it gets: the window's close button and "End task" in the
+ * task manager send the same window message, which no program can tell apart. Only Alt+F4
+ * gives itself away, through the key press just before.
  */
 public enum ShutdownKind {
-	/** Über den Beenden-Knopf im Spiel. Der einzige Fall, der wirklich freiwillig ist. */
-	QUIT("the quit button inside the game"),
-	/** Alt+F4, erkannt am Tastendruck kurz vor dem Schließen. */
-	ALT_F4("Alt+F4"),
-	/** Das X am Fenster, der Task-Manager, ein Abmelden - von außen geschlossen. */
-	WINDOW_CLOSE("the window's close button or the task manager"),
-	/** Gar kein Marker: Absturz, Freeze oder harter Kill. */
-	CRASH("no shutdown at all, the process just died");
+	/** The quit button inside the game. The only case that is truly voluntary. */
+	QUIT,
+	/** Alt+F4, recognised by the key press shortly before the window closed. */
+	ALT_F4,
+	/** The window's close button, the task manager, logging off - closed from outside. */
+	WINDOW_CLOSE,
+	/** No marker at all: crash, freeze, or hard kill. */
+	CRASH;
 
-	private final String description;
-
-	ShutdownKind(String description) {
-		this.description = description;
-	}
-
-	public String description() {
-		return description;
-	}
-
-	/** Ob das Fenster von außen geschlossen wurde, egal auf welchem Weg. */
+	/** Whether the window was closed from outside the game, by whatever means. */
 	public boolean isForceClose() {
 		return this == ALT_F4 || this == WINDOW_CLOSE;
 	}
@@ -48,7 +38,7 @@ public enum ShutdownKind {
 			}
 		}
 
-		// Marker aus einer älteren Version ohne Art-Angabe: damals hiess das "freiwillig".
+		// A marker from an older version that did not record the kind meant "voluntary".
 		return QUIT;
 	}
 }

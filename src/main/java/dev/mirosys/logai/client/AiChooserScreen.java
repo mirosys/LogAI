@@ -3,7 +3,6 @@ package dev.mirosys.logai.client;
 import java.util.List;
 import java.util.function.Consumer;
 
-import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -11,19 +10,14 @@ import net.minecraft.network.chat.Component;
 import dev.mirosys.logai.config.AiProvider;
 
 /**
- * Die offene Liste der KI-Anbieter. Ein Klick wählt aus und geht weiter - dieselbe
- * Darstellung im Einrichtungsschritt wie in den Einstellungen.
+ * The open list of AI services. Clicking one picks it and moves on - the same screen in
+ * the setup as in the settings.
  */
 public class AiChooserScreen extends SetupScreen {
 	private static final int ROW_HEIGHT = 24;
 
-	private final Consumer<AiProvider> onPick;
 	private final List<Component> body;
-
-	public AiChooserScreen(Screen parent, String title, List<Component> body,
-			Consumer<AiProvider> onPick) {
-		this(parent, Component.literal(title), body, onPick);
-	}
+	private final Consumer<AiProvider> onPick;
 
 	public AiChooserScreen(Screen parent, Component title, List<Component> body,
 			Consumer<AiProvider> onPick) {
@@ -45,17 +39,16 @@ public class AiChooserScreen extends SetupScreen {
 	@Override
 	protected void init() {
 		int centerX = this.width / 2;
-		AiProvider[] providers = AiProvider.values();
-		AiProvider current = this.config.provider();
 		int top = this.buttonTop();
+		AiProvider current = this.config.provider();
+
+		AiProvider[] providers = AiProvider.values();
 
 		for (int i = 0; i < providers.length; i++) {
 			AiProvider provider = providers[i];
-			// Die aktuelle Wahl wird markiert, damit man in den Einstellungen sieht,
-			// wo man gerade steht.
+			// Mark the current choice, so the settings show where you stand.
 			Component label = provider == current
-					? Component.literal(provider.displayName()).withStyle(ChatFormatting.GREEN)
-							.append(Texts.dim("  (current)"))
+					? Texts.emphasis(provider.displayName()).append(Texts.dim("  (current)"))
 					: Component.literal(provider.displayName());
 
 			this.addRenderableWidget(Button

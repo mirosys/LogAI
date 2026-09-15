@@ -5,11 +5,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * Was der Watcher tatsächlich beobachtet hat.
+ * What the watcher actually observed.
  *
- * <p>Ohne diese Angaben muss die KI raten, wie das Spiel gestorben ist: ein Log, das
- * einfach aufhört, sieht identisch aus, egal ob eingefroren, vom Speicher erschlagen
- * oder absichtlich beendet. Genau dieses Rätselraten soll der Abschnitt ersparen.
+ * <p>Without this the AI has to guess how the game died: a log that simply stops looks
+ * the same whether the game froze, ran out of memory, or was closed on purpose. This is
+ * the part of the report that saves it the guessing.
  */
 public record CrashEvidence(
 		ShutdownKind shutdownKind,
@@ -30,12 +30,7 @@ public record CrashEvidence(
 				deliberateTest);
 	}
 
-	/** Ob das Spiel es überhaupt noch geschafft hat, sich ordentlich zu verabschieden. */
-	public boolean orderlyShutdown() {
-		return shutdownKind != ShutdownKind.CRASH;
-	}
-
-	/** Wie lange nach der letzten Log-Zeile der Prozess noch existierte. */
+	/** Seconds between the last log write and the process disappearing, or -1 if unknown. */
 	public long silenceSeconds() {
 		if (lastLogWriteMillis <= 0) {
 			return -1;

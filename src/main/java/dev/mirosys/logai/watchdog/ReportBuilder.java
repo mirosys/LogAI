@@ -6,20 +6,19 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
 
 /**
- * Baut die Textdatei, die der Nutzer in den Chat einfügt: Prompt-Kopf, danach das Log.
+ * Builds the text file the user pastes into the chat: the prompt first, then the log.
  */
 public final class ReportBuilder {
-	/** Zeilen vom Anfang des Logs - dort stehen Minecraft-Version, Loader und die komplette Modliste. */
+	/** Lines from the start of the log: Minecraft version, loader, and the full mod list. */
 	private static final int HEAD_LINES = 300;
-	/** Zeilen vom Ende des Logs - dort steht, was tatsächlich schiefgegangen ist. */
+	/** Lines from the end of the log: where things actually went wrong. */
 	private static final int TAIL_LINES = 1800;
-	/** Aus einer hs_err-Datei ist nur der Kopf interessant, der Rest ist Speicher-Dump. */
+	/** Only the head of an hs_err file is interesting; the rest is a memory dump. */
 	private static final int HS_ERR_LINES = 220;
 
 	public static final DateTimeFormatter FILE_STAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss");
@@ -28,9 +27,7 @@ public final class ReportBuilder {
 	private ReportBuilder() {
 	}
 
-	/**
-	 * Schreibt den Bericht und gibt die erzeugte Datei zurück.
-	 */
+	/** Writes the report and returns the file. */
 	public static Path build(WatchSession session, CrashEvidence evidence, LocalDateTime crashedAt)
 			throws IOException {
 		StringBuilder out = new StringBuilder(64 * 1024);
@@ -91,9 +88,7 @@ public final class ReportBuilder {
 				.append("caused it and what I need to do to fix it.\n\n");
 	}
 
-	/**
-	 * Der Abschnitt, der die KI davon abhält, den Absturzhergang zu erraten.
-	 */
+	/** The section that keeps the AI from guessing how the game died. */
 	private static void appendContext(StringBuilder out, WatchSession session,
 			CrashEvidence evidence, LocalDateTime crashedAt) {
 		out.append("Context:\n")
@@ -121,10 +116,10 @@ public final class ReportBuilder {
 					.append(" seconds before the process disappeared.\n");
 		}
 
-		// Bei einem normalen Beenden ist "nichts gefunden" der Normalfall und keine Spur,
-		// der jemand nachgehen müsste.
-		if (!evidence.crashSignatureInLog() && evidence.nativeCrashFile() == null
-				&& !evidence.deliberateTest() && evidence.shutdownKind() != ShutdownKind.QUIT) {
+		// After a normal quit, "nothing found" is the expected outcome, not a lead.
+		boolean noTrace = !evidence.crashSignatureInLog() && evidence.nativeCrashFile() == null;
+
+		if (noTrace && !evidence.deliberateTest() && evidence.shutdownKind() != ShutdownKind.QUIT) {
 			out.append("\nSo there is no exception and no crash report anywhere. Do not look for a ")
 					.append("stack trace, there is none - look at what the game was doing in the last ")
 					.append(evidence.shutdownKind().isForceClose()
@@ -171,13 +166,11 @@ public final class ReportBuilder {
 			return;
 		}
 
-		int skipped = lines.size() - HEAD_LINES - TAIL_LINES;
-
 		for (int i = 0; i < HEAD_LINES; i++) {
 			out.append(lines.get(i)).append('\n');
 		}
 
-		out.append("\n[... LogAI removed ").append(skipped)
+		out.append("\n[... LogAI removed ").append(lines.size() - HEAD_LINES - TAIL_LINES)
 				.append(" lines from the middle of the log to keep this file readable ...]\n\n");
 
 		for (int i = lines.size() - TAIL_LINES; i < lines.size(); i++) {
@@ -200,19 +193,16 @@ public final class ReportBuilder {
 
 	private static List<String> readLines(Path file) {
 		try {
-			// Logs enthalten gelegentlich kaputte Bytes aus Mod-Ausgaben, deshalb tolerant lesen.
-			String content = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
-			return new ArrayList<>(content.lines().toList());
+			// Logs occasionally contain broken bytes from mod output; read them leniently.
+			return new String(Files.readAllBytes(file), StandardCharsets.UTF_8).lines().toList();
 		} catch (IOException e) {
-			List<String> fallback = new ArrayList<>();
-			fallback.add("[LogAI could not read " + file + ": " + e + "]");
-			return fallback;
+			return List.of("[LogAI could not read " + file + ": " + e + "]");
 		}
 	}
 
 	/**
-	 * Sucht eine hs_err-Datei, die nach dem Spielstart entstanden ist. Nur die zählt zu
-	 * diesem Absturz, ältere liegen oft noch im Spielordner herum.
+	 * Finds an hs_err file written after the game started. Only that one belongs to this
+	 * crash; older ones tend to linger in the game folder.
 	 */
 	static Path findRecentHsErr(WatchSession session) {
 		try (Stream<Path> files = Files.list(session.gameDir)) {

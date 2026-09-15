@@ -3,11 +3,9 @@ package dev.mirosys.logai;
 import net.fabricmc.loader.api.entrypoint.PreLaunchEntrypoint;
 
 /**
- * Der früheste Einstiegspunkt, den Fabric anbietet: er läuft, sobald die Mods gefunden
- * sind und noch bevor Minecraft startet.
- *
- * <p>Dadurch überwacht der Watcher auch den Ladevorgang selbst - also den Abschnitt, in
- * dem Abstürze und Hänger am häufigsten passieren.
+ * The earliest entrypoint Fabric offers: it runs once the mods are discovered and before
+ * Minecraft starts. That way the watcher also covers the loading phase, which is where
+ * crashes and hangs are most common.
  */
 public final class LogAIPreLaunch implements PreLaunchEntrypoint {
 	@Override
